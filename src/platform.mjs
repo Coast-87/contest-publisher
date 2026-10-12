@@ -113,6 +113,10 @@ export function knownHcloudPaths({ platform = PLATFORM, env = process.env, home 
       join(local, 'HuaweiCloud', 'KooCLI', 'hcloud.exe'),
       join(home, '.huaweicloud', 'hcloud.exe'),
       join(local, 'Programs', 'KooCLI', 'hcloud.exe'),
+      // ensure-user-bindir.mjs 的 primary 落位（install-hcloud.ps1 默认装这里）
+      join(local, 'Programs', '.huawei', 'bin', 'hcloud.exe'),
+      // 本机常见的 KooCLI 安装器目录
+      join(local, 'KooCLI', 'hcloud.exe'),
     ];
   }
   return ['/usr/local/bin/hcloud', '/opt/homebrew/bin/hcloud', `${home}/.local/bin/hcloud`];

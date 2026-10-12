@@ -360,6 +360,74 @@ export async function handleApiRequest(req, res, target) {
         } catch { add('network-ict', false, '无法访问 gallery.developer.huaweicloud.com', '提交前需要可访问 ICT 平台，请检查网络或代理'); }
         return json(res, 200, { ok: checks.every(c => c.ok === true || c.ok === 'client'), checks });
       }
+  if (req.method === 'POST' && pathname === '/api/setup-env') {
+      // 一键环境安装（内嵌控件）：装 KooCLI → 装 STS SDK 依赖 → 写 AK/SK 用户环境变量。
+      // 全部步骤幂等；AK/SK 来自 credentials.csv（华为云控制台导出）或请求体显式传入。
+      const input = await body(req).catch(() => ({}));
+      const skillDir = resolveBundledSkillDir();
+      if (!skillDir) return json(res, 400, { error: '未找到内置 ICT Skill 目录' });
+      const log = [];
+      const note = (line) => { log.push(line); };
+
+      // 1) KooCLI（install-hcloud.ps1 幂等：PATH 上已有 hcloud 直接跳过）
+      const installScript = path.join(skillDir, 'scripts', 'install-hcloud.ps1');
+      if (!existsSync(installScript)) return json(res, 400, { error: 'install-hcloud.ps1 不存在', log });
+      if (PLATFORM !== 'win32') return json(res, 400, { error: '一键安装仅支持 Windows', log });
+      try {
+        note('安装 KooCLI …');
+        const out = run('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', installScript], { timeout: 180_000 });
+        const line = String(out).split('\n').find(l => l.includes('#hcloud='));
+        if (!line) return json(res, 400, { error: 'install-hcloud.ps1 未输出 #hcloud=', log });
+        note(`hcloud 就绪: ${line.split('=')[1].trim()}`);
+      } catch (e) {
+        return json(res, 400, { error: `KooCLI 安装失败: ${e.message}`, log });
+      }
+
+      // 2) Python + STS SDK 回退依赖（gen_sts.py 子用户自动回退路径需要）
+      const python = (() => { try { return resolvePython(); } catch { return null; } })();
+      if (!python) return json(res, 400, { error: '未找到 Python（py / python 均不在 PATH）。请安装 Python 3.10+ 后重试', log });
+      note('安装 huaweicloudsdkcore …');
+      try {
+        run(python, ['-m', 'pip', 'install', '--quiet', '--user', 'huaweicloudsdkcore'], { timeout: 300_000 });
+        note('huaweicloudsdkcore 就绪');
+      } catch (e) {
+        return json(res, 400, { error: `pip install huaweicloudsdkcore 失败: ${e.message}`, log });
+      }
+
+      // 3) AK/SK 用户环境变量：请求体 > credentials.csv > 已有配置
+      let ak = (input.ak || '').trim();
+      let sk = (input.sk || '').trim();
+      if (!ak || !sk) {
+        const csvPath = path.join(sidecarRoots()[0] || process.cwd(), 'credentials.csv');
+        if (existsSync(csvPath)) {
+          try {
+            const text = await readFile(csvPath, 'utf8');
+            const row = text.split(/\r?\n/).find(l => l.includes(','));
+            if (row) {
+              const cols = row.split(',').map(c => c.replace(/^"|"$/g, '').replace(/^\uFEFF/, '').trim());
+              // 标准排布: User Name,Access Key Id,Secret Access Key；取最后两列形如密钥的值
+              const pair = cols.filter(c => /^[A-Za-z0-9/+=]{16,64}$/.test(c));
+              if (pair.length >= 2) { ak = pair[pair.length - 2]; sk = pair[pair.length - 1]; note('从 credentials.csv 读取 AK/SK'); }
+            }
+          } catch { /* CSV 读取失败继续走已有配置 */ }
+        }
+      }
+      if (!ak) ak = process.env.HUAWEICLOUD_SDK_AK || '';
+      if (!sk) sk = process.env.HUAWEICLOUD_SDK_SK || '';
+      if (!ak || !sk) {
+        return json(res, 400, {
+          error: '缺少 AK/SK：把控制台下载的 credentials.csv 放到程序目录，或在弹窗里输入',
+          needCreds: true, log,
+        });
+      }
+      run('setx', ['HUAWEICLOUD_SDK_AK', ak], { timeout: 15_000 });
+      run('setx', ['HUAWEICLOUD_SDK_SK', sk], { timeout: 15_000 });
+      process.env.HUAWEICLOUD_SDK_AK = ak;
+      process.env.HUAWEICLOUD_SDK_SK = sk;
+      note('AK/SK 已写入用户环境变量（重启应用后依然生效）');
+
+      return json(res, 200, { ok: true, log });
+    }
   if (req.method === 'POST' && pathname === '/api/gen-sts') {
       const input = await body(req);
       // Generate STS via local hcloud (KooCLI); requires HUAWEICLOUD_AK/SK already configured in hcloud

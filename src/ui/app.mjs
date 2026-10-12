@@ -302,6 +302,7 @@ svg.i.sm{width:14px;height:14px}
 <div class="field"><label>提交邮箱（可选）</label><input id="cfgAuthorEmail" placeholder="留空则使用全局 git config user.email" /></div>
 <div class="field"><label>华为云账号 ID（Domain ID，32 位）</label><input id="cfgAccountId" placeholder="用于自动生成 STS" /></div>
 <div class="field"><label>STS 凭证文件（绝对路径）</label><div style="display:flex;gap:6px"><input id="cfgCredsPath" placeholder="可手动填或点旁边按钮生成" style="flex:1" /><button class="btn" id="genStsBtn" style="flex:none;padding:6px 12px"><span id="genStsLabel">生成</span></button></div></div>
+<div class="field full"><label>环境未就绪（没装 hcloud / 提示缺少 AK-SK / SDK 依赖缺失）？点下面一键装好</label><div style="display:flex;gap:6px;align-items:center"><button class="btn" id="setupEnvBtn" style="flex:none;padding:6px 12px"><span id="setupEnvLabel">🛠 一键安装环境</span></button><span class="hint" id="setupEnvHint" style="font-size:12px">装 KooCLI + STS SDK 依赖 + 写 AK/SK 环境变量（幂等，可重复点）</span></div><div id="setupEnvLog" style="display:none;margin-top:6px;font-size:12px;color:var(--muted);white-space:pre-wrap;background:var(--bg,#fafafa);border:1px solid var(--stroke);border-radius:6px;padding:8px"></div></div>
 <div class="field"><label>赛题序号（点右侧按钮查看并选择全部赛题）</label><div style="display:flex;gap:6px"><input id="cfgProblemNumber" type="number" min="1" value="1" style="flex:1" /><button class="btn" id="fetchProblemsBtn" style="flex:none;padding:6px 12px">📋 选择</button></div></div>
 <input type="hidden" id="cfgProblemName" />
 <div class="field full"><label>本地仓库目录（放 GitHub 下载的代码包，01 面板下拉选取）</label><div style="display:flex;gap:6px"><input id="cfgLocalSourcesDir" placeholder="默认 ~/contest-publisher-sources" style="flex:1" /><button class="btn" id="openLocalDirCfgBtn" style="flex:none;padding:6px 12px">打开</button></div></div>
@@ -699,6 +700,30 @@ $('genStsBtn').onclick=async()=>{
   else toast(r.error||'生成失败',true)}
   catch(e){toast(e.message,true)}
   finally{$('genStsBtn').disabled=false;$('genStsLabel').textContent='生成'}};
+// ===== 一键安装环境（内嵌控件）=====
+// 三步幂等：KooCLI → huaweicloudsdkcore → AK/SK 环境变量（credentials.csv 或弹窗输入）。
+// 缺凭证时服务端返回 needCreds=true，弹出输入框补齐后重发一次。
+$('setupEnvBtn').onclick=async()=>{
+  const btn=$('setupEnvBtn'),label=$('setupEnvLabel'),logBox=$('setupEnvLog');
+  const runSetup=async(creds)=>{
+    btn.disabled=true;label.textContent='安装中…';logBox.style.display='block';logBox.textContent='正在执行…';
+    try{
+      const r=await api('/api/setup-env',{method:'POST',body:JSON.stringify(creds||{})});
+      logBox.textContent=(r.log||[]).map(l=>'· '+l).join(String.fromCharCode(10))+(r.error?String.fromCharCode(10)+'❌ '+r.error:'');
+      if(r.ok){label.textContent='✅ 环境已就绪';toast('✅ 环境安装完成，可直接点「生成」产出 STS 凭证');return true}
+      if(r.needCreds){
+        const ak=prompt('未找到 AK/SK。请粘贴华为云控制台下载的 Access Key Id (AK)：');
+        if(!ak)return false;
+        const sk=prompt('再粘贴 Secret Access Key (SK)：');
+        if(!sk)return false;
+        return await runSetup({ak:ak.trim(),sk:sk.trim()});
+      }
+      label.textContent='🛠 一键安装环境';toast(r.error||'安装失败（见日志）',true);return false;
+    }catch(e){label.textContent='🛠 一键安装环境';logBox.textContent+=String.fromCharCode(10)+'❌ '+e.message;toast(e.message,true);return false}
+    finally{btn.disabled=false}
+  };
+  await runSetup(null);
+};
 // ===== 配置导出 / 导入 =====
 // 导出：交给服务端写文件（浏览器与 WKWebView 里"下载"都不可靠），写完直接打开所在目录。
 $('exportCfgBtn').onclick=async()=>{
