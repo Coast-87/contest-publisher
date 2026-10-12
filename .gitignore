@@ -17,3 +17,5 @@ __MACOSX/
 Thumbs.db
 desktop.ini
 *.swp
+__pycache__/
+*.pyc
