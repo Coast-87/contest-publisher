@@ -1,0 +1,19 @@
+# 当前实现内置此策略；该文件用于审计记录和后续扩展。
+name: code-only
+version: 1
+source:
+  immutable: true
+  reject_credentials_in_url: true
+  reject_submodules: true
+allow:
+  source_extensions: [c, cc, cpp, cs, css, go, graphql, h, hpp, html, java, js, jsx, kt, mjs, php, py, rb, rs, scss, sh, bash, sql, svelte, ts, tsx, vue, wasm]
+  build_files: [package.json, package-lock.json, pnpm-lock.yaml, yarn.lock, bun.lock, requirements.txt, pyproject.toml, Cargo.toml, Cargo.lock, go.mod, go.sum, pom.xml, tsconfig.json, Makefile, Dockerfile]
+  attribution_files: [LICENSE, LICENCE, COPYING, NOTICE, COPYRIGHT]
+exclude:
+  directories: [.git, .github, .gitlab, .idea, .vscode, assets, build, cache, coverage, data, dist, docs, examples, logs, node_modules, reports, screenshots, tmp, uploads]
+  files: [README.md, CHANGELOG.md]
+gates:
+  secrets: block
+  rights_review: required
+  contest_rules_review: required
+  license_review: required

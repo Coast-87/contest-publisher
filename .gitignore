@@ -1,0 +1,19 @@
+# 构建产物：发布包与中间文件都不进版本库（二进制走 GitHub Releases）
+dist/
+build/
+*.zip
+
+# 依赖（只有 devDependencies，装 resedit 用于给 Windows exe 写资源）
+node_modules/
+
+# 运行数据：默认落在 ~/contest-publisher-runs，万一指到项目内也别提交
+runs/
+*.run.json
+.settings.json
+
+# 系统杂物
+.DS_Store
+__MACOSX/
+Thumbs.db
+desktop.ini
+*.swp

@@ -1,0 +1,28 @@
+{
+  "name": "contest-publisher",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Audit, prepare, verify, publish, and submit code-only competition workspaces.",
+  "bin": {
+    "contest-publisher": "bin/contest-publisher.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check bin/contest-publisher.mjs && for f in src/*.mjs scripts/*.mjs; do node --check \"$f\"; done",
+    "build:mac-arm64": "bun build bin/contest-publisher.mjs --compile --outfile dist/contest-publisher-macos-arm64",
+    "build": "npm run build:mac-arm64",
+    "build:mac": "./build-app.sh",
+    "build:win": "./build-win.sh",
+    "build:all": "./build-app.sh && ./build-win.sh",
+    "icon:win": "node scripts/make-ico.mjs",
+    "inspect:exe": "node scripts/inspect-exe.mjs",
+    "ui": "node bin/contest-publisher.mjs ui"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "resedit": "^3.1.0"
+  }
+}
