@@ -103,6 +103,8 @@ echo "==> [6/6] 打包 zip"
 mv "$STAGE" "$OUT"
 if command -v zip >/dev/null 2>&1; then
   (cd "$OUT" && zip -q -r "../$(basename "$ZIP")" .)
+elif command -v powershell >/dev/null 2>&1; then
+  powershell -NoProfile -Command "Compress-Archive -Path '$OUT/*' -DestinationPath '$ZIP' -Force"
 else
   ditto -c -k --sequesterRsrc "$OUT" "$ZIP"
 fi

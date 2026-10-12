@@ -19,6 +19,27 @@ function resize(source, size, dest) {
   } catch { return false; }
 }
 
+// Windows/Linux 没有 sips：走 Python PIL 缩放出各尺寸 PNG。
+// 直接塞 1024px 原图会让 ICO 超过 bun exe 内嵌图标槽（实测 270600 字节），
+// patch-exe-resources.mjs 就地替换必然失败 —— 必须产出 256px 封顶的多尺寸 ICO。
+function resizeWithPil(source, size, dest) {
+  const code = [
+    'from PIL import Image',
+    'import sys',
+    'img = Image.open(sys.argv[1]).convert("RGBA")',
+    'img.resize((int(sys.argv[3]), int(sys.argv[3])), Image.LANCZOS).save(sys.argv[2], format="PNG", optimize=True)',
+  ].join('; ');
+  try {
+    execFileSync('py', ['-c', code, source, dest, String(size)], { stdio: 'ignore' });
+    return true;
+  } catch {
+    try {
+      execFileSync('python', ['-c', code, source, dest, String(size)], { stdio: 'ignore' });
+      return true;
+    } catch { return false; }
+  }
+}
+
 function packIco(entries) {
   const header = Buffer.alloc(6);
   header.writeUInt16LE(0, 0); // reserved
@@ -51,7 +72,7 @@ function main() {
     const entries = [];
     for (const size of SIZES) {
       const file = path.join(stage, `${size}.png`);
-      if (resize(SOURCE, size, file) && existsSync(file)) entries.push({ size, data: readFileSync(file) });
+      if ((resize(SOURCE, size, file) || resizeWithPil(SOURCE, size, file)) && existsSync(file)) entries.push({ size, data: readFileSync(file) });
     }
     if (!entries.length) {
       // 没有 sips（非 macOS）时至少放进原始尺寸，Windows 会自行缩放。
