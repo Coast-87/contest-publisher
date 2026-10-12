@@ -26,7 +26,7 @@
 ## 目录
 
 - [下载与安装](#下载与安装) · [快速开始](#快速开始) · [它能做什么](#它能做什么)
-- [跨平台实现](#跨平台实现macos--windows) · [从源码构建](#从源码构建) · [测试](#测试)
+- [跨平台实现](#跨平台实现) · [从源码构建](#从源码构建) · [测试](#测试)
 - [设计原则](#设计原则) · [命令行](#cli-命令行) · [架构](#软件架构)
 
 ## 下载与安装
@@ -78,7 +78,7 @@
 | 🚀 一键推送 | 建 GitCode 公开仓库 → 确保公开 → 初始化 → 推送 → 锁定赛题 → 生成提交计划，6 步带实时进度 |
 | 🎯 目标始终可见 | 标题下常驻显示目标赛题与目标仓库名，推送前用确认框再对一次，避免提交错题 |
 | 🧾 证据留痕 | 每次运行一个目录，审计、验证、推送、提交的参数与结果都写成 JSON 证据，可回看可追溯 |
-| 🖥 两个平台同源 | 一份源码出 macOS `.app` 与 Windows 绿色包；平台差异集中在两个文件里，见[跨平台实现](#跨平台实现macos--windows) |
+| 🖥 两个平台同源 | 一份源码出 macOS `.app` 与 Windows 绿色包；平台差异集中在两个文件里，见[跨平台实现](#跨平台实现) |
 
 > 关于内置的 ICT Skill：仓库里 `huawei-cloud-publish-ict-work/` 是该 Skill 的随包快照（当前版本 `2026.10.09.001`，取自上游公开仓库 `https://gitcode.com/Lingxi-HandsOn/gallery.git` 的 `skills/huawei-cloud-publish-ict-work`，含 4 处本地差异：STS 900s 自动刷新、自包含的 troubleshooting 链接等）。它是应用运行提交步骤必需的外部适配器，不参与本项目的业务逻辑，也不含任何凭证。本地开发时与 `contest-publisher/` 并排的那一份是权威副本，构建脚本优先用它。
 
@@ -359,7 +359,9 @@ node bin/contest-publisher.mjs delete-run --run <run-id> --force --confirm-delet
 - 工作副本已初始化但尚未推送成功时，默认拒绝删除；确认无其他副本后再加 `--force`（UI 会弹二次确认）。
 
 
-## 跨平台实现（macOS / Windows）
+## 跨平台实现
+
+macOS 与 Windows 是同一份源码的两个构建目标，平台差异全部集中在两个文件里。
 
 同一份源码出两个平台的包，平台差异集中在 `src/platform.mjs`（纯函数，可注入 `platform`/`env`）与 `src/launcher.mjs`（工作台窗口的启动与生命周期），其余各层不含 `process.platform` 分支。
 
