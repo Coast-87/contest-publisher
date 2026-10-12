@@ -74,6 +74,19 @@ export async function writeSettings(settings) {
   return file;
 }
 
+// 配置导入/导出：只认这些键，文件里的其它键一律忽略，避免把任意内容写进设置文件。
+// cfgGitToken 是凭证，导出时默认不含（要含必须显式要求），导入时按文件内容如实应用。
+export const CONFIG_KEYS = [
+  'cfgRepoName', 'cfgGitToken', 'cfgAuthorName', 'cfgAuthorEmail', 'cfgAccountId', 'cfgCredsPath',
+  'cfgProblemNumber', 'cfgProblemName', 'cfgKeepPaths', 'cfgLocalSourcesDir', 'cfgExecuteSubmit', 'runsRoot',
+];
+export const SECRET_CONFIG_KEYS = ['cfgGitToken'];
+
+// 导出文件落在设置文件旁边（默认 ~/.contest-publisher/），导出后会打开这个目录。
+export function configDir() {
+  return path.dirname(settingsFile());
+}
+
 export function resolveRunsRoot(value) {
   const expanded = expandHome(value);
   if (!expanded) return null;

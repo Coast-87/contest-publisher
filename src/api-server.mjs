@@ -17,7 +17,7 @@ import { buildSubmitPlan, parseSubmitOutput } from './submit.mjs';
 import { deleteRun, listRuns, readRunMode, statusRun, writeRunMode } from './state.mjs';
 import { diffRun } from './diff.mjs';
 import { scaffoldRun } from './scaffold.mjs';
-import { defaultLocalSourcesDir, defaultRunsRoot, ensureDir, ensureLocalSourcesDir, exists, inside, readJson, readSettings, resolveRunsRoot, writeJson, writeSettings } from './store.mjs';
+import { CONFIG_KEYS, SECRET_CONFIG_KEYS, configDir, defaultLocalSourcesDir, defaultRunsRoot, ensureDir, ensureLocalSourcesDir, exists, inside, readJson, readSettings, resolveRunsRoot, writeJson, writeSettings } from './store.mjs';
 import { classifyPath, isKeptPath, normalizeKeepPaths, normalizeRelativePath } from './policy.mjs';
 
 const MAX_BODY = 2 * 1024 * 1024;
@@ -256,6 +256,56 @@ export async function handleApiRequest(req, res, target) {
         await mkdir(root, { recursive: true });
         await writeSettings({ ...saved, ...input, runsRoot: root });
         return json(res, 200, { ok: true, runsRoot: root });
+      }
+      // 导出配置：写成 JSON 文件并返回路径，工作台随后打开该目录（浏览器/壳里都没有可靠的"下载"能力）。
+      // 默认不含 GitCode Token，要含必须显式 includeToken=1——导出文件可能被转发或误提交。
+      if (req.method === 'GET' && pathname === '/api/config/export') {
+        const includeToken = query(req, 'includeToken') === '1';
+        const saved = await readSettings(root);
+        const settings = {};
+        for (const key of CONFIG_KEYS) {
+          if (!(key in saved)) continue;
+          if (!includeToken && SECRET_CONFIG_KEYS.includes(key)) continue;
+          settings[key] = saved[key];
+        }
+        // 运行根目录以当前生效值为准（设置文件里可能是旧值）。
+        settings.runsRoot = root;
+        const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
+        const target = path.join(configDir(), `contest-publisher-config-${stamp}.json`);
+        const includesToken = SECRET_CONFIG_KEYS.some(key => key in settings);
+        await writeJson(target, {
+          _app: 'contest-publisher',
+          _schema: 1,
+          _exportedAt: new Date().toISOString(),
+          _includesToken: includesToken,
+          settings,
+        });
+        return json(res, 200, { ok: true, path: target, keys: Object.keys(settings), includesToken });
+      }
+      // 导入配置：文件由工作台读出来解析，这里只接收对象并按白名单落盘。
+      // 非白名单键、非标量值一律跳过并在结果里列出，不静默吞掉也不写进设置文件。
+      if (req.method === 'POST' && pathname === '/api/config/import') {
+        const input = await body(req);
+        const incoming = input?.settings;
+        if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) throw new Error('导入文件格式不对：缺少 settings 对象');
+        const applied = [];
+        const skipped = [];
+        const patch = {};
+        for (const [key, value] of Object.entries(incoming)) {
+          const scalar = typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+          if (!CONFIG_KEYS.includes(key) || !scalar) { skipped.push(key); continue; }
+          patch[key] = value;
+          applied.push(key);
+        }
+        if (!applied.length) throw new Error('文件里没有可导入的配置项（键都不在支持列表内）');
+        const saved = await readSettings(root);
+        if (Object.hasOwn(patch, 'runsRoot')) {
+          try { root = await switchRunsRoot(workspace, patch.runsRoot); }
+          catch { delete patch.runsRoot; applied.splice(applied.indexOf('runsRoot'), 1); skipped.push('runsRoot'); }
+        }
+        await mkdir(root, { recursive: true });
+        await writeSettings({ ...saved, ...patch, runsRoot: root });
+        return json(res, 200, { ok: true, applied, skipped, runsRoot: root });
       }
       if (req.method === 'GET' && pathname === '/api/env-check') {
         const checks = [];

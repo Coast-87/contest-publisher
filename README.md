@@ -12,7 +12,7 @@
 
 需要写出去的操作默认只生成计划，逐步确认后才执行。
 
-[![Release](https://img.shields.io/github/v/release/Coast-87/contest-publisher?label=release&color=e891b4)](https://github.com/Coast-87/contest-publisher/releases) [![Downloads](https://img.shields.io/github/downloads/Coast-87/contest-publisher/total?color=e9a83f)](https://github.com/Coast-87/contest-publisher/releases) [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-9d8ef0)](#下载与安装) [![Tests](https://img.shields.io/badge/tests-87%20passing-7dd8c3)](#测试) [![Node](https://img.shields.io/badge/node-%3E%3D22-7dd8c3?logo=nodedotjs&logoColor=white)](#从源码构建) [![Bun](https://img.shields.io/badge/build-bun-black?logo=bun&logoColor=white)](#从源码构建) ![Skill](https://img.shields.io/badge/skill-2026.10.09.001-e891b4)
+[![Release](https://img.shields.io/github/v/release/Coast-87/contest-publisher?label=release&color=e891b4)](https://github.com/Coast-87/contest-publisher/releases) [![Downloads](https://img.shields.io/github/downloads/Coast-87/contest-publisher/total?color=e9a83f)](https://github.com/Coast-87/contest-publisher/releases) [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-9d8ef0)](#下载与安装) [![Tests](https://img.shields.io/badge/tests-92%20passing-7dd8c3)](#测试) [![Node](https://img.shields.io/badge/node-%3E%3D22-7dd8c3?logo=nodedotjs&logoColor=white)](#从源码构建) [![Bun](https://img.shields.io/badge/build-bun-black?logo=bun&logoColor=white)](#从源码构建) ![Skill](https://img.shields.io/badge/skill-2026.10.09.001-e891b4)
 
 <img src="assets/screenshot-workbench.png" width="900" alt="工作台：左侧运行列表，中间七个阶段，右侧赛题与仓库配置" />
 
@@ -74,6 +74,7 @@
 | ✅ 验证门禁 | 凭证、语法、文件白名单、原创代码增量四道检查，任何一项不过就不让推送 |
 | 🚀 一键推送 | 建 GitCode 公开仓库 → 确保公开 → 初始化 → 推送 → 锁定赛题 → 生成提交计划，6 步带实时进度 |
 | 🎯 目标始终可见 | 标题下常驻显示目标赛题与目标仓库名，推送前用确认框再对一次，避免提交错题 |
+| 💾 配置可搬走 | 「导出配置」把全部设置写成一份 JSON（默认连 GitCode Token 一起，取消勾选就不带凭证）；「导入配置」在覆盖前先列出将生效的项，白名单外的键直接跳过 |
 | 🧾 证据留痕 | 每次运行一个目录，审计、验证、推送、提交的参数与结果都写成 JSON 证据，可回看可追溯 |
 | 🖥 两个平台同源 | 一份源码出 macOS `.app` 与 Windows 绿色包；平台差异集中在两个文件里，见[跨平台实现](#跨平台实现) |
 
@@ -418,11 +419,11 @@ dist/windows/contest-publisher-windows-x64.exe --help # Windows 命令行版
 ## 测试
 
 ```bash
-npm test        # 87 个用例（node --test）
+npm test        # 92 个用例（node --test）
 npm run check   # bin/ src/ scripts/ 全量语法检查
 ```
 
-用例覆盖完整流水线（获取 / 审计 / 脱敏 / 副本 / 验证 / 差异 / 建仓 / 推送 / 提交参数）。其中 `test/platform.test.mjs` 专门盯**平台分支**：Windows 的 node 与 PATH 探测、zip 解压命令、python 启动器解析、`--app` 窗口参数，以及「窗口常驻 / 秒退回退 / 无 Chromium 回退」三条启动路径，全部用注入的假 `env`、假文件系统、假子进程在 macOS 上断言。工作台页面另有一个门禁用例：把内嵌 `<script>` 编译一遍，防止模板字符串里的转义写错导致整页按钮失效。
+用例覆盖完整流水线（获取 / 审计 / 脱敏 / 副本 / 验证 / 差异 / 建仓 / 推送 / 提交参数）与配置导出导入。其中 `test/platform.test.mjs` 专门盯**平台分支**：Windows 的 node 与 PATH 探测、zip 解压命令、python 启动器解析、`--app` 窗口参数，以及「窗口常驻 / 秒退回退 / 无 Chromium 回退」三条启动路径，全部用注入的假 `env`、假文件系统、假子进程在 macOS 上断言。工作台页面另有一个门禁用例：把内嵌 `<script>` 编译一遍，防止模板字符串里的转义写错导致整页按钮失效。
 
 ## 设计原则
 

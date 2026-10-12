@@ -295,7 +295,7 @@ svg.i.sm{width:14px;height:14px}
   </div>
 </main>
 </div>
-<div id="settingsModal" class="modal"><div class="modal-card"><h2>⚙ 自动化配置</h2><p class="hint">所有字段本地保存（localStorage），不会上传。密码类字段仅在触发远程操作时使用。</p><div class="form-grid">
+<div id="settingsModal" class="modal"><div class="modal-card"><h2>⚙ 自动化配置</h2><p class="hint">配置只存在本机（浏览器 localStorage + 本机设置文件），不会上传到任何服务；Token 仅在创建仓库和推送时使用。「导出配置」默认连 Token 一起导出（明文，别外传）。</p><div class="form-grid">
 <div class="field full"><label>作品 / 仓库名称（留空自动跟随源仓库名）</label><input id="cfgRepoName" placeholder="留空自动跟随源仓库名" /></div>
 <div class="field full"><label>GitCode Access Token</label><input id="cfgGitToken" type="password" placeholder="仅在创建仓库和推送时使用" /></div>
 <div class="field"><label>提交作者名（留空自动读 git config）</label><input id="cfgAuthorName" placeholder="留空则使用全局 git config user.name" /></div>
@@ -307,6 +307,7 @@ svg.i.sm{width:14px;height:14px}
 <div class="field full"><label>本地仓库目录（放 GitHub 下载的代码包，01 面板下拉选取）</label><div style="display:flex;gap:6px"><input id="cfgLocalSourcesDir" placeholder="默认 ~/contest-publisher-sources" style="flex:1" /><button class="btn" id="openLocalDirCfgBtn" style="flex:none;padding:6px 12px">打开</button></div></div>
 <div class="field full"><label>额外保留的源路径（每行一个，如 reports/ 或 dashboard/；赛题要求的报告/看板产物）</label><textarea id="cfgKeepPaths" placeholder="reports/&#10;dashboard/&#10;scheduler/"></textarea></div>
 </div><div class="actions"><label class="badge"><input id="cfgExecuteSubmit" type="checkbox" /> 最终提交也自动执行</label></div>
+<div class="actions"><button class="btn" id="exportCfgBtn" title="把当前配置导出成 JSON 文件（默认不含 GitCode Token），导出后会自动打开所在目录">⬇ 导出配置</button><button class="btn" id="importCfgBtn" title="从导出的 JSON 文件恢复配置；导入前会先列出将要覆盖的项">⬆ 导入配置</button><label class="badge" title="导出文件里含 GitCode Token 明文，别转发、别提交进仓库；只想搬设置不搬凭证就取消勾选"><input id="cfgIncludeToken" type="checkbox" checked /> 导出含 Token（明文）</label><input type="file" id="importCfgFile" accept=".json,application/json" style="display:none" /></div>
 <div class="actions"><button class="btn" id="cancelSettings">取消</button><button class="btn primary" id="saveSettings">保存配置</button><button class="btn warn" id="clearSettings">清除所有保存</button></div></div></div>
 <div id="problemsModal" class="modal"><div class="modal-card" style="width:min(680px,100%);max-height:84vh;overflow:auto"><h2>📋 赛题列表</h2><p class="hint" id="problemsSummary">从平台拉取当前可选的 AI 赛题；点击一行把它设为本次提交目标。</p><div id="problemsList" style="margin-top:14px;display:flex;flex-direction:column;gap:8px"></div><div class="actions" style="margin-top:16px"><button class="btn" id="reloadProblems">重新拉取</button><button class="btn primary" id="closeProblems">关闭</button></div></div></div>
 <div id="envModal" class="modal"><div class="modal-card" style="width:min(640px,100%)"><h2>🩺 环境自检</h2><p class="hint">检测本机运行所需的所有依赖与网络。</p><div id="envList" style="margin-top:14px;display:flex;flex-direction:column;gap:8px;font-size:13px"></div><div class="actions" style="margin-top:16px"><button class="btn" id="rerunEnvCheck">重新检测</button><button class="btn primary" id="closeEnv">关闭</button></div></div></div>
@@ -698,6 +699,42 @@ $('genStsBtn').onclick=async()=>{
   else toast(r.error||'生成失败',true)}
   catch(e){toast(e.message,true)}
   finally{$('genStsBtn').disabled=false;$('genStsLabel').textContent='生成'}};
+// ===== 配置导出 / 导入 =====
+// 导出：交给服务端写文件（浏览器与 WKWebView 里"下载"都不可靠），写完直接打开所在目录。
+$('exportCfgBtn').onclick=async()=>{
+  const includeToken=$('cfgIncludeToken').checked;
+  try{
+    await saveCfgSynced();
+    const r=await api('/api/config/export?includeToken='+(includeToken?1:0));
+    toast('已导出 '+r.keys.length+' 项配置（'+(r.includesToken?'含 GitCode Token 明文，请勿外传':'不含 Token')+'）：'+r.path);
+    await api('/api/open-path',{method:'POST',body:JSON.stringify({path:r.path})}).catch(()=>{});
+  }catch(e){toast(e.message,true)}
+};
+$('importCfgBtn').onclick=()=>$('importCfgFile').click();
+$('importCfgFile').onchange=async()=>{
+  const file=$('importCfgFile').files&&$('importCfgFile').files[0];
+  $('importCfgFile').value='';
+  if(!file)return;
+  let parsed;
+  try{parsed=JSON.parse(await file.text())}catch{toast('不是合法的 JSON 文件',true);return}
+  const settings=parsed&&parsed.settings;
+  if(!settings||typeof settings!=='object'||Array.isArray(settings)){toast('不是本软件导出的配置文件（缺少 settings 字段）',true);return}
+  const keys=Object.keys(settings);
+  if(!keys.length){toast('文件里没有配置项',true);return}
+  const hasToken=keys.includes('cfgGitToken');
+  const ok=await uiDialog({title:'导入配置',message:'来自 '+file.name+'，将覆盖这 '+keys.length+' 项：'+keys.join('、')+(hasToken?'。\\n\\n注意：文件里含 GitCode Access Token（明文），导入后会写进本机配置。':''),okText:'导入'});
+  if(!ok)return;
+  try{
+    const r=await api('/api/config/import',{method:'POST',body:JSON.stringify({settings})});
+    const merged=await loadCfgSynced();
+    applyCfg(merged);
+    $('settingsModal').classList.remove('open');
+    await syncRunsRoot();
+    await refreshRuns();
+    renderRun();
+    toast('已导入 '+r.applied.length+' 项配置'+(r.skipped.length?'（跳过 '+r.skipped.length+' 项不支持或非标量的键）':''));
+  }catch(e){toast(e.message,true)}
+};
 $('clearSettings').onclick=async()=>{if(!await uiDialog({title:'清除配置',message:'清除所有本地保存的配置？配置面板与 localStorage 都会被清空。',okText:'清除',danger:true}))return;localStorage.removeItem(CFG_KEY);try{await api('/api/settings',{method:'POST',body:JSON.stringify({})})}catch{}for(const id of CFG_FIELDS){const el=$(id);if(!el)continue;el.type==='checkbox'?(el.checked=false):(el.value='')};toast('本地配置已清除')};
 
 // ===== 目标赛题与目标仓库（让"提交哪道题、推到哪个仓库"始终可见、可确认）=====

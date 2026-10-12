@@ -139,6 +139,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate {
         }
     }
 
+    // <input type="file"> 在 WKWebView 里也要 uiDelegate 兜底：不实现 runOpenPanel 时点导入按钮毫无反应
+    // （和 confirm/prompt 是同一类坑）。导入配置用的就是它。
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.canChooseFiles = true
+        panel.canCreateDirectories = false
+        completionHandler(panel.runModal() == .OK ? panel.urls : nil)
+    }
+
     private enum DialogKind { case alert, confirm, prompt }
 
     private func presentDialog(message: String, kind: DialogKind, defaultText: String = "",
