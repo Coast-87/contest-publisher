@@ -195,6 +195,67 @@ def gen_sts_via_sdk(account: str, region: str, session: str, dur: int):
     return c
 
 
+def write_creds(camel: dict, creds_out: str, sh_out: str, note: str):
+    Path(creds_out).write_text(json.dumps(camel, indent=2, ensure_ascii=False), encoding="utf-8")
+    Path(sh_out).write_text(
+        f"export STS_AK='{camel['accessKeyId']}'\n"
+        f"export STS_SK='{camel['secretAccessKey']}'\n"
+        f"export STS_TOKEN='{camel['securityToken']}'\n",
+        encoding="utf-8",
+    )
+    print(f"[gen-sts] 已写入 {creds_out}（+ {sh_out}），{note}")
+
+
+def try_sdk_fallback(args, reason: str):
+    """hcloud 通道失败后尝试官方 SDK 回退（IAM 子用户 AK/SK 的自动救援）。
+
+    条件：环境变量 HUAWEICLOUD_SDK_AK/SK（或别名归一化后）存在，且官方 SDK 可导入。
+    成功返回 credentials dict；任何失败返回 None（调用方继续走原报错路径）。
+    不用 sys.exit 版 gen_sts_via_sdk 是为了保留 hcloud 的原始错误信息。
+    """
+    if not (os.environ.get("HUAWEICLOUD_SDK_AK") and os.environ.get("HUAWEICLOUD_SDK_SK")):
+        return None
+    try:
+        from huaweicloudsdkcore.auth.credentials import GlobalCredentials
+        from huaweicloudsdkcore.signer.signer import Signer
+        from huaweicloudsdkcore.sdk_request import SdkRequest
+    except ImportError:
+        return None
+
+    ak = os.environ["HUAWEICLOUD_SDK_AK"]
+    sk = os.environ["HUAWEICLOUD_SDK_SK"]
+    body = json.dumps({
+        "agency_urn": f"iam::{args.account}:agency:SELF_VERIFY",
+        "agency_session_name": args.session,
+        "duration_seconds": args.dur,
+        "policy": json.dumps(POLICY),
+    }).encode()
+    try:
+        creds = GlobalCredentials(ak, sk, args.account)
+        signed = Signer(creds).sign(SdkRequest(
+            method="POST", schema="https",
+            host=f"sts.{args.region}.myhuaweicloud.com",
+            resource_path="/v5/agencies/assume",
+            query_params=[],
+            header_params={"Content-Type": "application/json"},
+            body=body,
+        ))
+        import urllib.request
+        http_req = urllib.request.Request(
+            f"https://sts.{args.region}.myhuaweicloud.com/v5/agencies/assume",
+            data=body, headers=dict(signed.header_params),
+        )
+        with urllib.request.urlopen(http_req, timeout=15) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        c = payload.get("credentials")
+        if c and c.get("access_key_id"):
+            print(f"[gen-sts] hcloud 通道失败（{reason}）→ 已自动回退官方 SDK 路径", file=sys.stderr)
+            return c
+    except Exception as e:
+        print(f"[gen-sts] SDK 回退也未成功: {e}", file=sys.stderr)
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser(
         prog="gen_sts.py",
@@ -227,14 +288,7 @@ def main():
             "_refresh": {"accountId": args.account, "agencyUrn": agency_urn, "region": args.region,
                          "hcloudExe": hcloud_exe, "mode": "sdk"},
         }
-        Path(creds_out).write_text(json.dumps(camel, indent=2, ensure_ascii=False), encoding="utf-8")
-        Path(sh_out).write_text(
-            f"export STS_AK='{c['access_key_id']}'\n"
-            f"export STS_SK='{c['secret_access_key']}'\n"
-            f"export STS_TOKEN='{c['security_token']}'\n",
-            encoding="utf-8",
-        )
-        print(f"[gen-sts] 已写入 {creds_out}（+ {sh_out}），mode=sdk（子用户回退路径）")
+        write_creds(camel, creds_out, sh_out, "mode=sdk（子用户回退路径）")
         return
 
     hcloud_exe = resolve_hcloud(args.hcloud)
@@ -262,6 +316,17 @@ def main():
         "",
     )
     if err_line:
+        c = try_sdk_fallback(args, err_line)
+        if c:
+            camel = {
+                "accessKeyId": c["access_key_id"],
+                "secretAccessKey": c["secret_access_key"],
+                "securityToken": c["security_token"],
+                "_refresh": {"accountId": args.account, "agencyUrn": agency_urn, "region": args.region,
+                             "hcloudExe": hcloud_exe, "mode": "sdk"},
+            }
+            write_creds(camel, creds_out, sh_out, "mode=sdk（hcloud 失败自动回退）")
+            return
         hint = (
             "hcloud 缺少 AK/SK 配置：执行 hcloud configure set --access-key=<AK> --secret-key=<SK> --cli-region=<region>，"
             "或设置环境变量 HUAWEICLOUD_SDK_AK/SK（别名 HUAWEICLOUD_AK/SK、HW_ACCESS_KEY/HW_SECRET_KEY）"
@@ -276,6 +341,18 @@ def main():
     if not isinstance(c, dict) or "credentials" not in c:
         code = c.get("error_code", "未知错误码") if isinstance(c, dict) else type(c).__name__
         emsg = c.get("error_msg", "") if isinstance(c, dict) else str(c)[:200]
+        # IAM 签名 401（APIGW.0301）是子用户凭证走 hcloud 通道的标志性失败：自动回退 SDK 路径
+        fallback = try_sdk_fallback(args, f"{code}: {emsg}")
+        if fallback:
+            camel = {
+                "accessKeyId": fallback["access_key_id"],
+                "secretAccessKey": fallback["secret_access_key"],
+                "securityToken": fallback["security_token"],
+                "_refresh": {"accountId": args.account, "agencyUrn": agency_urn, "region": args.region,
+                             "hcloudExe": hcloud_exe, "mode": "sdk"},
+            }
+            write_creds(camel, creds_out, sh_out, "mode=sdk（hcloud 失败自动回退）")
+            return
         sys.exit(
             f"❌ STS 响应异常（{code}）：{emsg}\n"
             "请检查 AK/SK 是否有效、账号 ID 是否正确，或按 references/troubleshooting.md 排查。"
