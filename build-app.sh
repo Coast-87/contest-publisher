@@ -95,7 +95,8 @@ cp "$CLI" "$PKG/contest-publisher-macos-arm64"
 if [ -d "$SKILL_SRC" ]; then
   ditto --noextattr --norsrc "$SKILL_SRC" "$PKG/huawei-cloud-publish-ict-work"
 fi
-sed 's/$/\r/' > "$PKG/使用说明.txt" <<TXT
+# 文件名用 ASCII（zip 不带 UTF-8 标志位时中文名在 Windows 解压器里会乱码）。
+sed 's/$/\r/' > "$PKG/README-macOS.txt" <<TXT
 Contest Publisher $VERSION · macOS (Apple Silicon)
 ================================================
 
@@ -119,7 +120,13 @@ Contest Publisher $VERSION · macOS (Apple Silicon)
   - 本地仓库目录（放要提交的代码包）：~/contest-publisher-sources
 TXT
 rm -f "$ZIP"
-ditto -c -k --sequesterRsrc "$PKG" "$ZIP"
+# 用 zip 而不是 ditto：ditto 会把扩展属性写成 ._ 开头的 AppleDouble 条目（解压出来一堆垃圾文件），
+# zip 不存扩展属性；可执行位仍保留（存在 Unix 权限字段里），签名在文件内容里，解压后照样校验通过。
+if command -v zip >/dev/null 2>&1; then
+  (cd "$PKG" && zip -q -r -y "../$(basename "$ZIP")" .)
+else
+  ditto -c -k "$PKG" "$ZIP"
+fi
 rm -rf "$PKG"
 echo "构建完成: $(pwd)/dist/Contest Publisher.app"
 echo "发布包:   $(pwd)/$ZIP ($(du -h "$ZIP" | cut -f1))"

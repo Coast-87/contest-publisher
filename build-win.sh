@@ -64,8 +64,9 @@ else
 fi
 
 echo "==> [5/6] 写使用说明"
-# Windows 记事本用 CRLF，避免老版本记事本把整段读成一行。
-sed 's/$/\r/' > "$STAGE/使用说明.txt" <<TXT
+# 文件名用 ASCII：Info-ZIP / ditto 都不给非 ASCII 名字打 UTF-8 标志位，
+# 中文文件名在 Windows 自带解压器里会变成乱码。内容仍是中文，记事本用 CRLF。
+sed 's/$/\r/' > "$STAGE/README-Windows.txt" <<TXT
 Contest Publisher $VERSION · Windows 绿色版
 ==========================================
 

@@ -14,7 +14,7 @@
 | Windows（64 位） | `ContestPublisher-windows-x64.zip` | 解压后双击 `Contest Publisher.exe`。系统要求 Windows 10 1809+ |
 | 任意平台（源码） | `contest-publisher-source-<版本>.zip` | 需要 Node 22+ 与 [Bun](https://bun.sh) 自行构建，见下方「从源码构建」 |
 
-两个绿色包都是**解压即用**：不用装 Node，不用装运行时，内置 ICT Skill（`huawei-cloud-publish-ict-work`）和界面资源都在包里。
+解压后先看包里的 `README-Windows.txt` / `README-macOS.txt`（中文说明，文件名用 ASCII 免得 Windows 解压器乱码）。两个绿色包都是**解压即用**：不用装 Node，不用装运行时，内置 ICT Skill（`huawei-cloud-publish-ict-work`）和界面资源都在包里。
 
 > 关于内置的 ICT Skill：仓库里 `huawei-cloud-publish-ict-work/` 是该 Skill 的随包快照（当前版本 `2026.10.09.001`，取自上游公开仓库 `https://gitcode.com/Lingxi-HandsOn/gallery.git` 的 `skills/huawei-cloud-publish-ict-work`，含 4 处本地差异：STS 900s 自动刷新、自包含的 troubleshooting 链接等）。它是应用运行提交步骤必需的外部适配器，不参与本项目的业务逻辑，也不含任何凭证。本地开发时与 `contest-publisher/` 并排的那一份是权威副本，构建脚本优先用它。
 
