@@ -1,8 +1,33 @@
-# contest-publisher
+<div align="center">
 
-`contest-publisher` 是一个本地 Node.js CLI，用于把外部 Git 仓库按“代码 + 项目文档白名单”复制到独立工作目录，然后完成审计、脱敏、构建校验、目标仓库初始化、推送和 ICT 大赛提交计划。
+<img src="assets/icon.png" width="116" alt="Contest Publisher" />
 
-软件架构说明：[`ARCHITECTURE.md`](ARCHITECTURE.md)；领域上下文：[`CONTEXT.md`](CONTEXT.md)。
+# Contest Publisher
+
+**把代码变成可提交的作品。**
+
+一个纯本地工作台：拉取源仓库 → 审计脱敏 → 生成纯代码副本 → 验证原创增量 → 建公开仓库 → 推送 → 锁定赛题 → 提交。
+中间每一步都留证据，需要写出去的操作默认只生成计划、逐步确认。
+
+[![Release](https://img.shields.io/github/v/release/Coast-87/contest-publisher?label=release&color=e891b4)](https://github.com/Coast-87/contest-publisher/releases)
+[![Downloads](https://img.shields.io/github/downloads/Coast-87/contest-publisher/total?color=e9a83f)](https://github.com/Coast-87/contest-publisher/releases)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-9d8ef0)](#下载与安装)
+[![Tests](https://img.shields.io/badge/tests-87%20passing-7dd8c3)](#测试)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-7dd8c3?logo=nodedotjs&logoColor=white)](#从源码构建)
+[![Bun](https://img.shields.io/badge/build-bun-black?logo=bun&logoColor=white)](#从源码构建)
+![Skill](https://img.shields.io/badge/skill-2026.10.09.001-e891b4)
+
+<img src="assets/screenshot-workbench.png" width="900" alt="工作台：左侧运行列表，中间七个阶段，右侧赛题与仓库配置" />
+
+<sub>本地工作台：七个阶段（获取 → 审计 → 副本 → 验证 → 仓库 → 赛题 → 提交），左侧是运行实例列表，所有状态与证据都落在运行根目录。</sub>
+
+</div>
+
+## 目录
+
+- [下载与安装](#下载与安装) · [快速开始](#快速开始) · [它能做什么](#它能做什么)
+- [跨平台实现](#跨平台实现macos--windows) · [从源码构建](#从源码构建) · [测试](#测试)
+- [设计原则](#设计原则) · [命令行](#cli-命令行) · [架构](#软件架构)
 
 ## 下载与安装
 
@@ -15,8 +40,6 @@
 | 任意平台（源码） | `contest-publisher-source-<版本>.zip` | 需要 Node 22+ 与 [Bun](https://bun.sh) 自行构建，见下方「从源码构建」 |
 
 解压后先看包里的 `README-Windows.txt` / `README-macOS.txt`（中文说明，文件名用 ASCII 免得 Windows 解压器乱码）。两个绿色包都是**解压即用**：不用装 Node，不用装运行时，内置 ICT Skill（`huawei-cloud-publish-ict-work`）和界面资源都在包里。
-
-> 关于内置的 ICT Skill：仓库里 `huawei-cloud-publish-ict-work/` 是该 Skill 的随包快照（当前版本 `2026.10.09.001`，取自上游公开仓库 `https://gitcode.com/Lingxi-HandsOn/gallery.git` 的 `skills/huawei-cloud-publish-ict-work`，含 4 处本地差异：STS 900s 自动刷新、自包含的 troubleshooting 链接等）。它是应用运行提交步骤必需的外部适配器，不参与本项目的业务逻辑，也不含任何凭证。本地开发时与 `contest-publisher/` 并排的那一份是权威副本，构建脚本优先用它。
 
 **首次运行会被系统拦一次**（包没有代码签名，是本地构建的）：
 
@@ -33,18 +56,44 @@
 
 数据落点（两个平台一致，都可用环境变量覆盖）：运行根目录 `~/contest-publisher-runs`（Windows 为 `%USERPROFILE%\contest-publisher-runs`）、本地代码包目录 `~/contest-publisher-sources`、启动器日志 `~/Library/Logs/Contest Publisher/launcher.log`（Windows 为 `%LOCALAPPDATA%\Contest Publisher\launcher.log`）。
 
+## 快速开始
+
+```text
+1. 打开软件 → 01 面板填源仓库 HTTPS 地址（或选「本地仓库」从 ~/contest-publisher-sources 下拉选取）
+2. 「⚡ 一键自动」  审计 → 处理可脱敏/排除的发现 → 生成纯代码副本 → 验证
+3. 03 面板写代码 / 加文件 → 「运行验证」（原创增量门禁；纯搬运的包可用「搬运模式」豁免）
+4. ⚙ 配置 填 GitCode Token 与 STS 凭证 → 「🚀 一键推送」建公开仓库、初始化、推送、锁定赛题
+5. 05 面板「生成提交计划」确认参数 → 「执行提交」；之后用「查询判题结果」看判题与失败原因
+```
+
+## 它能做什么
+
+| 能力 | 说明 |
+|---|---|
+| 🔒 源仓库只读 | 拉取即固定 commit，`source/` 永不修改，所有改动发生在独立的 `work/` 副本里 |
+| 🧭 白名单式纯代码副本 | 只保留代码 + 项目文档 + 构建元数据 + 许可证/归属文件；报告、看板等交付物可用「保留路径」显式放行 |
+| 🕵️ 审计与脱敏 | 凭证硬阻断（不可通过 review 豁免）、个人信息与本机路径可替换或排除、许可证与归属信息保留 |
+| 🔍 逐行对比原仓库 | 区分「上游内容 / 工具生成 / 工具脱敏改写 / 你自己的改动」，也列出按策略没进副本的文件 |
+| ✅ 验证门禁 | 凭证、语法、文件白名单、原创代码增量四道检查，任何一项不过就不让推送 |
+| 🚀 一键推送 | 建 GitCode 公开仓库 → 确保公开 → 初始化 → 推送 → 锁定赛题 → 生成提交计划，6 步带实时进度 |
+| 🎯 目标始终可见 | 标题下常驻显示目标赛题与目标仓库名，推送前用确认框再对一次，避免提交错题 |
+| 🧾 证据留痕 | 每次运行一个目录，审计、验证、推送、提交的参数与结果都写成 JSON 证据，可回看可追溯 |
+| 🖥 两个平台同源 | 一份源码出 macOS `.app` 与 Windows 绿色包；平台差异集中在两个文件里，见[跨平台实现](#跨平台实现macos--windows) |
+
+> 关于内置的 ICT Skill：仓库里 `huawei-cloud-publish-ict-work/` 是该 Skill 的随包快照（当前版本 `2026.10.09.001`，取自上游公开仓库 `https://gitcode.com/Lingxi-HandsOn/gallery.git` 的 `skills/huawei-cloud-publish-ict-work`，含 4 处本地差异：STS 900s 自动刷新、自包含的 troubleshooting 链接等）。它是应用运行提交步骤必需的外部适配器，不参与本项目的业务逻辑，也不含任何凭证。本地开发时与 `contest-publisher/` 并排的那一份是权威副本，构建脚本优先用它。
+
 ## UI 工作台
 
 直接运行编译后的软件即可启动完整 UI 软件：
 
 ```bash
-"/Users/coast/Documents/HUAWEI/ai answer-skill/contest-publisher/dist/contest-publisher-macos-arm64"
+./dist/contest-publisher-macos-arm64
 ```
 
 软件会启动本地工作台并打开浏览器。也可以手动启动：
 
 ```bash
-"/Users/coast/Documents/HUAWEI/ai answer-skill/contest-publisher/dist/contest-publisher-macos-arm64" ui --port 8787
+./dist/contest-publisher-macos-arm64 ui --port 8787
 ```
 
 UI 已覆盖完整流程：
@@ -357,27 +406,24 @@ npm test             # 87 个用例，含 Windows 分支的纯函数用例
 
 `build-win.sh` 在 macOS / Linux / Windows 上都能跑：非 Windows 环境用 `bun --compile --target=bun-windows-x64` 交叉编译，Windows 环境（MSYS/Cygwin）额外带上版本/厂商等 PE 元数据。
 
-## 已编译发行文件
-
-当前环境为 macOS arm64，已生成独立可执行文件：
-
-```text
-/Users/coast/Documents/HUAWEI/ai answer-skill/contest-publisher/dist/contest-publisher-macos-arm64
-```
-
-直接运行：
+### 编译产物怎么跑
 
 ```bash
-"/Users/coast/Documents/HUAWEI/ai answer-skill/contest-publisher/dist/contest-publisher-macos-arm64" help
+./dist/contest-publisher-macos-arm64 help            # macOS 命令行版
+./dist/contest-publisher-macos-arm64 ui              # 只起工作台，用默认浏览器打开
+dist/windows/contest-publisher-windows-x64.exe --help # Windows 命令行版
 ```
 
-重新编译：
+编译产物是独立的原生可执行文件（macOS 是 Mach-O，Windows 是 PE32+），启动不需要 Node 或 Bun。运行 ICT Skill 脚本时的 node 运行时按以下顺序自动解析：环境变量 `CONTEST_PUBLISHER_NODE` → PATH 里的 node → 常见安装位置（macOS 的 homebrew / nvm / volta / fnm，Windows 的 Program Files / LOCALAPPDATA / Volta / fnm / scoop / nvm-windows）→ 兜底用打包进自身的 Bun 运行时执行（`BUN_BE_BUN=1`）。环境自检的 `node` 项会显示最终选用的运行时；机器上完全没有 node 也能完成提交。ICT Skill 目录、GitCode 凭证和 STS 凭证仍通过命令参数或环境提供。
+
+## 测试
 
 ```bash
-npm run build
+npm test        # 87 个用例（node --test）
+npm run check   # bin/ src/ scripts/ 全量语法检查
 ```
 
-编译产物是 Mach-O arm64 独立可执行文件，不需要 Node.js 或 Bun 才能启动。运行 ICT Skill 脚本时的 node 运行时按以下顺序自动解析：环境变量 `CONTEST_PUBLISHER_NODE` → PATH 里的 node → 常见安装位置（homebrew / nvm / volta / fnm）→ 兜底用打包进自身的 Bun 运行时执行（`BUN_BE_BUN=1`）。环境自检的 `node` 项会显示最终选用的运行时；机器上完全没有 node 也能完成提交。ICT Skill 目录、GitCode 凭证和 STS 凭证仍通过命令参数或环境提供。
+用例覆盖完整流水线（获取 / 审计 / 脱敏 / 副本 / 验证 / 差异 / 建仓 / 推送 / 提交参数）。其中 `test/platform.test.mjs` 专门盯**平台分支**：Windows 的 node 与 PATH 探测、zip 解压命令、python 启动器解析、`--app` 窗口参数，以及「窗口常驻 / 秒退回退 / 无 Chromium 回退」三条启动路径，全部用注入的假 `env`、假文件系统、假子进程在 macOS 上断言。工作台页面另有一个门禁用例：把内嵌 `<script>` 编译一遍，防止模板字符串里的转义写错导致整页按钮失效。
 
 ## 设计原则
 
@@ -390,10 +436,12 @@ npm run build
 - `status` 和 `list-runs` 从 `runs/<run-id>/` 的证据文件恢复流程状态，支持中断后继续。
 - 参赛提交前需要明确记录权利审阅和赛题规则审阅。
 
-## 快速开始
+## CLI 命令行
+
+UI 里每个按钮都对应下面一条命令；除 `--execute` 外都只读或只生成计划。
 
 ```bash
-cd "/Users/coast/Documents/HUAWEI/ai answer-skill/contest-publisher"
+cd contest-publisher
 npm test
 npm run check
 
@@ -441,7 +489,7 @@ node bin/contest-publisher.mjs push \
 ```bash
 node bin/contest-publisher.mjs select-problem \
   --run runs/<run-id> \
-  --skill-dir "/Users/coast/Documents/HUAWEI/ai answer-skill/huawei-cloud-publish-ict-work" \
+  --skill-dir ../huawei-cloud-publish-ict-work \
   --number '<problem-number>' \
   --creds '/absolute/path/to/sts-creds.json'
 ```
@@ -451,7 +499,7 @@ node bin/contest-publisher.mjs select-problem \
 ```bash
 node bin/contest-publisher.mjs submit \
   --run runs/<run-id> \
-  --skill-dir "/Users/coast/Documents/HUAWEI/ai answer-skill/huawei-cloud-publish-ict-work" \
+  --skill-dir ../huawei-cloud-publish-ict-work \
   --problem-id '<problem-id>' \
   --training-camp '<training-camp-id>' \
   --problem-name '<problem-name>' \
@@ -462,3 +510,9 @@ node bin/contest-publisher.mjs submit \
 ```
 
 确认 dry-run 计划、远程分支和赛题目标后，再加 `--execute --confirm-submit`。
+
+## 软件架构
+
+分层、模块职责与扩展点见 [`ARCHITECTURE.md`](ARCHITECTURE.md)，领域词汇与边界见 [`CONTEXT.md`](CONTEXT.md)，架构决策记录见 [`docs/adr/`](docs/adr/)。
+
+一句话版本：`bin/`（命令路由）→ `src/api-server.mjs` + `src/ui-server.mjs`（本地 HTTP 与工作台）→ `src/*.mjs`（获取 / 审计 / 副本 / 验证 / 提交等应用服务）→ `src/policy.mjs`（领域策略）→ `src/store.mjs`、`src/git.mjs`、`src/gitcode.mjs`、`src/process.mjs`（基础设施）→ `src/platform.mjs`、`src/launcher.mjs`（平台适配，唯一允许出现平台分支的地方）。
