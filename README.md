@@ -127,7 +127,7 @@ UI 已覆盖完整流程：
 - 工作副本代码编辑器：按 `path · kind` 选择文件、打开、保存、新建代码文件
 - 当前运行证据 JSON 查看
 
-> 工作台里的确认框、名称输入框、文件路径输入框都是**页面内自绘弹窗**，不依赖宿主 `window.confirm` / `window.prompt`。macOS 原生壳的 `WKWebView` 在没有 `uiDelegate` 时会直接让 `confirm` 返回 false、`prompt` 返回 null，按钮就表现为"点了没反应"；现在删除、生成副本、新建文件、一键推送、执行提交、清除配置都走自绘弹窗，且原生壳也补上了 `WKUIDelegate` 作为兜底。
+> 工作台里的确认框、名称输入框、文件路径输入框都是**页面内自绘弹窗**，不依赖宿主 `window.confirm` / `window.prompt`。macOS 原生壳的 `WKWebView` 在没有 `uiDelegate` 时会直接让 `confirm` 返回 false、`prompt` 返回 null，按钮就表现为"点了没反应"；现在删除、生成副本、新建文件、一键推送、执行提交、清除配置都走自绘弹窗，且原生壳也补上了 `WKUIDelegate` 作为兜底。同一类坑还有 `<input type="file">`：不实现 `runOpenPanelWith`，点「导入配置」同样毫无反应——壳里已实现。
 
 ### 两个"一键"按钮什么时候能点
 
