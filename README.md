@@ -7,7 +7,9 @@
 **把代码变成可提交的作品。**
 
 一个纯本地工作台：拉取源仓库 → 审计脱敏 → 生成纯代码副本 → 验证原创增量。
+
 再建公开仓库 → 推送 → 锁定赛题 → 提交，每一步都留下可回看的证据。
+
 需要写出去的操作默认只生成计划，逐步确认后才执行。
 
 [![Release](https://img.shields.io/github/v/release/Coast-87/contest-publisher?label=release&color=e891b4)](https://github.com/Coast-87/contest-publisher/releases) [![Downloads](https://img.shields.io/github/downloads/Coast-87/contest-publisher/total?color=e9a83f)](https://github.com/Coast-87/contest-publisher/releases) [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-9d8ef0)](#下载与安装) [![Tests](https://img.shields.io/badge/tests-87%20passing-7dd8c3)](#测试) [![Node](https://img.shields.io/badge/node-%3E%3D22-7dd8c3?logo=nodedotjs&logoColor=white)](#从源码构建) [![Bun](https://img.shields.io/badge/build-bun-black?logo=bun&logoColor=white)](#从源码构建) ![Skill](https://img.shields.io/badge/skill-2026.10.09.001-e891b4)
