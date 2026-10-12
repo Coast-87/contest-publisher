@@ -6,7 +6,7 @@
 
 ## 下载与安装
 
-发布包在 [Releases](../../releases) 里，macOS 与 Windows 各一个绿色包，外加源码包：
+发布包在 [Releases](https://github.com/Coast-87/contest-publisher/releases) 里，macOS 与 Windows 各一个绿色包，外加源码包：
 
 | 平台 | 包 | 怎么用 |
 |---|---|---|
