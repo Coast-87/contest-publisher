@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 // api.mjs — 统一平台 REST 调用（fail-fast，跨平台，无第三方依赖）
+// sync-src: huawei-cloud-publish-work-to-gallery/scripts/api.mjs
+// vendored 副本：源为 huawei-cloud-publish-work-to-gallery/scripts/api.mjs；逻辑改动须同步同源两端。
+// 副本允许的有意差异（仅此一处，勿当漂移清理）：本副本额外支持 `--json`（application/json 请求体），
+// 供 ICT 专属预检 check-ict-git-repo.mjs 调 A3 POST /open-api-guest/v1/gallery/competition/git-check。
 //
 // 背景:
 //   平台仅有的 API（camps 查询 / works 发布）此前在 SKILL.md 里以
@@ -295,12 +299,28 @@ function refreshStsCreds(credsFile) {
     return false;
   }
 
+  // hcloud (KooCLI) 输出含 ANSI 彩色码且可能夹带日志行，需剥离 ANSI 后提取 JSON。
+  // 与同源副本 huawei-cloud-publish-work-to-gallery/scripts/api.mjs 保持一致：直接 JSON.parse(stdout)
+  // 在带色/带日志的 KooCLI 版本上会失败，使 401 自动刷新静默失效（对外表现为裸 401）。
+  const cleanStdout = stdout.replace(/\x1b\[[0-9;]*m/g, "").trim();
+
   let newCreds;
   try {
-    newCreds = JSON.parse(stdout).credentials;
+    newCreds = JSON.parse(cleanStdout).credentials;
   } catch {
-    console.error("⚠️ STS 凭证刷新失败（hcloud 返回非 JSON）");
-    return false;
+    // hcloud 可能输出非纯 JSON（含日志行），尝试提取首个 JSON 对象
+    const jsonMatch = cleanStdout.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        newCreds = JSON.parse(jsonMatch[0]).credentials;
+      } catch {
+        console.error("⚠️ STS 凭证刷新失败（hcloud 返回非 JSON）");
+        return false;
+      }
+    } else {
+      console.error("⚠️ STS 凭证刷新失败（hcloud 返回非 JSON）");
+      return false;
+    }
   }
 
   // 更新 creds 文件（保留 _refresh 元数据）

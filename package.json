@@ -1,6 +1,6 @@
 {
   "name": "contest-publisher",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Audit, prepare, verify, publish, and submit code-only competition workspaces.",
@@ -17,6 +17,8 @@
     "build:all": "./build-app.sh && ./build-win.sh",
     "icon:win": "node scripts/make-ico.mjs",
     "inspect:exe": "node scripts/inspect-exe.mjs",
+    "skill:check": "node scripts/update-skill.mjs --status",
+    "skill:update": "node scripts/update-skill.mjs --apply --rebuild",
     "ui": "node bin/contest-publisher.mjs ui"
   },
   "engines": {

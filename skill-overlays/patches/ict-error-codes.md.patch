@@ -1,0 +1,11 @@
+--- a/references/ict-error-codes.md
++++ b/references/ict-error-codes.md
+@@ -31,7 +31,7 @@
+ | `GALLERY.PARAM.GIT_BRANCH_INVALID` | 400 | gitBranch 长度非 1–250 字符，或含不支持字符（`..`、`//`、以 `/`/`.` 结尾等） | 用 `read-git-info.mjs` 输出的远端确实存在的分支名重提 |
+ | `GALLERY.PARAM.GIT_URL_EXAMPLE_REPO` | 400 | gitUrl 命中 ICT 示例仓库红线（host+path,配置 `ICT_FORBIDDEN_GIT_HOST_PATHS`）；`reason` 附命中片段 | 该代码仓库属于平台示例/演示仓库，**不能**作为赛题作品提交。提示用户：**唯一处置是回到「选择项目目录」步骤重新选择**自己开发的赛题作品目录后提交；**禁止** fork 示例仓库、**禁止**拆分/另推示例内容为个人仓库提交、**禁止**提供此类变通建议（均非自研，仍会被拦）。当前提交参数不可复用，清理本次临时文件（`submit-params.json`/`sts-creds.json`） |
+ | `GALLERY.IDEMPOTENCY.CONFLICT` | 409 | 同幂等键不同请求体 | **重提/改名后必须用新 Idempotency-Key**（`ict-submit-<domainId>-<timestamp>`） |
+-| `GALLERY.AUTH.UNAUTHORIZED` | 401 | 身份/凭证无效 | 网关后确认网关正常注入 `X-Domain-Id`；本地联调检查 `domainId` 参数/STS 凭证过期 |
++| `GALLERY.AUTH.UNAUTHORIZED` | 401 | 身份/凭证无效 | 网关后确认网关正常注入 `X-Domain-Id`；本地联调检查 `domainId` 参数/STS 凭证过期。经 api.mjs 的脚本调用凭证含 `_refresh` 元数据时已自动原地刷新并重试一次；仍 401 → 让用户重新生成 STS 凭证（Step 0）或检查 `_refresh` 是否缺失 |
+ | `GALLERY.WORK.PUBLISH_RATE_LIMITED` | 429 | 提交过于频繁 | 等 `Retry-After` 窗口再试 |
+ | `GALLERY.WORK.DUPLICATE` | 409 | 该账号在**该赛题所属活动**下已有同名作品占名（判重键 = `accountId`+`trainingCampId`+`workName`；`pending_review`/`review_failed` 不占名，`draft`/`published`/`hidden`/`archived` 占名）。每个 AI 赛题各有独立 `trainingCampId`，故占名**按赛题隔离**（同名作品换赛题可提交，同赛题必须换名） | 换一个未占用的作品名（≤30 字符）并生成 **新 Idempotency-Key** 后重提；`workName` 落在 `build-submit-params.mjs` 产出的参数 JSON 内，**改名必须重跑该脚本**（只重跑 `submit-ict-work.mjs` 会复用旧名、再次 409），新名须经用户确认；若既有同名作品就是本次要交的作品，直接到做题面板查看其判题状态，不要重复提交 |
+ | `GALLERY.SYSTEM.INTERNAL` | 500 | 服务内部异常 | 30s 后重试；3 次失败带 requestId 报障 |

@@ -1,6 +1,6 @@
 # Troubleshooting — Publish Work to Gallery
 
-**平台分流（重要）：** 错误码表、网络问题、打包结构、封面/图表规则均为**跨平台**内容，本文件直接给出。安装/字体/Playwright 等**平台专属**排障命令已拆分：Windows → [work-preparation-windows.md](work-preparation-windows.md)；Linux/EulerOS（HCE）→ [work-preparation-linux.md](work-preparation-linux.md)。运行前先 `node <skill>/scripts/detect-env.mjs` 确认环境，只读对应平台小节。
+**平台分流（重要）：** 错误码表、网络问题、打包结构、封面/图表规则均为**跨平台**内容，本文件直接给出。安装/字体/Playwright 等**平台专属**排障命令已拆分：Windows → [work-preparation-windows.md](work-preparation-windows.md)；Linux/EulerOS（HCE）→ [work-preparation-linux.md](work-preparation-linux.md)。运行前先 `node $SKILL_DIR/scripts/detect-env.mjs` 确认环境，只读对应平台小节。
 
 ## Table of Contents
 
@@ -26,9 +26,9 @@ API requests to `https://gallery.developer.huaweicloud.com` time out or return c
 
 **Diagnosis:**
 
-连通性检查命令（`/open-api-guest/v1/gallery/announcements/current`，无需 STS 凭证）见 [SKILL.md — Prerequisites](SKILL.md#prerequisites)，直接照跑即可；超时或连接错误即判定平台不可达。（注：收到任何 HTTP 响应即说明平台可达；`announcement` 为 `null` 仅代表当前无生效公告，连通性正常。）
+连通性检查命令（`/open-api-guest/v1/gallery/announcements/current`，无需 STS 凭证）见 [SKILL.md — 脚本契约速查](../SKILL.md#脚本契约速查)，直接照跑即可；超时或连接错误即判定平台不可达。（注：收到任何 HTTP 响应即说明平台可达；`announcement` 为 `null` 仅代表当前无生效公告，连通性正常。）
 
-技能版本检查（`node <skill>/scripts/check-version.mjs`，读取自身 `name`/`version` 调 `open-api-guest GET /v1/gallery/skills/status`，无需凭证）为**平台统一判定**：已登记在 `SKILLS_VERSION` 的技能，本地 `version` 缺失/无法解析或落后于登记版本 → `status=outdated`（提示升级并停止）；本地版本 ≥ 登记版本 → `status=pass`；未登记技能 → `status=skip`。平台不可达/响应异常时脚本按 `status=skip` 处理（尽力而为，不阻塞）。升级文案由平台按当前技能名渲染（`${skillName}`/`${skillInstallCommand}` 占位符替换）后随 outdated 响应下发。
+技能版本检查（`node $SKILL_DIR/scripts/check-version.mjs`，读取自身 `name`/`version` 调 `open-api-guest GET /v1/gallery/skills/status`，无需凭证）为**平台统一判定**：已登记在 `SKILLS_VERSION` 的技能，本地 `version` 缺失/无法解析或落后于登记版本 → `status=outdated`（提示升级并停止）；本地版本 ≥ 登记版本 → `status=pass`；未登记技能 → `status=skip`。平台不可达/响应异常时脚本按 `status=skip` 处理（尽力而为，不阻塞）。升级文案由平台按当前技能名渲染（`${skillName}`/`${skillInstallCommand}` 占位符替换）后随 outdated 响应下发。
 
 **Possible causes and solutions:**
 
@@ -75,10 +75,10 @@ Certificate errors occur when accessing the platform via HTTPS.
 
 1. **前缀禁用转换（推荐）**：
    ```bash
-   MSYS_NO_PATHCONV=1 node <skill>/scripts/api.mjs GET /v1/gallery/announcements/current --prefix open-api-guest
+   MSYS_NO_PATHCONV=1 node $SKILL_DIR/scripts/api.mjs GET /v1/gallery/announcements/current --prefix open-api-guest
    ```
 2. **用 `//` 双斜杠转义**：`api.mjs GET //v1/gallery/announcements/current --prefix open-api-guest`（MSYS 将 `//` 视为第一个 `/` 后的文字，还原为 `/v1/...`）。
-3. **改用 PowerShell/CMD 执行**：`powershell -Command "node <skill>/scripts/api.mjs GET /v1/... --prefix open-api-guest"`，无 MSYS 转换。
+3. **改用 PowerShell/CMD 执行**：`powershell -Command "node $SKILL_DIR/scripts/api.mjs GET /v1/... --prefix open-api-guest"`，无 MSYS 转换。
 
 > 同理适用于任何以 `/` 开头的路径参数（`api.mjs`、`gen_sts.py`、`build-cover.mjs --url` 等）。判断信号：stderr/响应中出现 `C:\Program Files\Git\` 前缀或 URL 中 `Program Files` 字样，即命中此问题。
 
@@ -164,20 +164,28 @@ Start-Process -Wait -FilePath $exe -ArgumentList "/quiet","InstallAllUsers=0","P
 Install Huawei Cloud KooCLI:
 
 ```bash
-# Linux/macOS
-curl -sSL https://res-hw-global.obs.ap-southeast-1.myhuaweicloud.com/cli/latest/hcloud_install.sh -o hcloud_install.sh && bash hcloud_install.sh
+# Linux/macOS — 一键式安装（官方源 qs-hcli/hcli_02_003_02；默认装 /usr/local/hcloud/ → /usr/local/bin/）
+curl -sSL https://cn-north-4-hdn-koocli.obs.cn-north-4.myhuaweicloud.com/cli/latest/hcloud_install.sh -o ./hcloud_install.sh && bash ./hcloud_install.sh
+# 无交互跳过: 末尾加 -y；提示权限不足时切换 root 重跑。无 root 沙箱用户级分步（包内含扁平 hcloud 二进制）:
+#   echo $HOSTTYPE   # x86_64=AMD64 / aarch64=ARM64（URL 按架构替换 amd64/arm64）
+#   curl -sSL "https://cn-north-4-hdn-koocli.obs.cn-north-4.myhuaweicloud.com/cli/latest/huaweicloud-cli-linux-amd64.tar.gz" | tar -xz -C ~/.local/bin
+#   export PATH="$HOME/.local/bin:$PATH"
 ```
+
+> **下载源失效兜底（Linux）**：安装 URL 404/`NoSuchBucket` 时 → 参照官方文档更新下载源：[在Linux系统上安装KooCLI](https://support.huaweicloud.com/qs-hcli/hcli_02_003_02.html)（一键式安装 / 分步安装，URL 按最新文档取用）。
 
 ```powershell
 # Windows — 一键安装脚本（下载官方 zip → 解压 → 验证版本 → 自动写入用户 PATH）
-powershell -ExecutionPolicy Bypass -File <skill>/scripts/install-hcloud.ps1                         # 装到 ensure-user-bindir.mjs 选定目录（默认）
-powershell -ExecutionPolicy Bypass -File <skill>/scripts/install-hcloud.ps1 -Dir D:\tools\hcloud   # 指定目录（覆盖默认）
+powershell -ExecutionPolicy Bypass -File $SKILL_DIR/scripts/install-hcloud.ps1                         # 装到 ensure-user-bindir.mjs 选定目录（默认）
+powershell -ExecutionPolicy Bypass -File $SKILL_DIR/scripts/install-hcloud.ps1 -Dir D:\tools\hcloud   # 指定目录（覆盖默认）
 # 默认装到「用户级统一 bIN 目录」（ensure-user-bindir.mjs 首选 %LOCALAPPDATA%\Programs\.huawei\bin）；默认幂等：
 # PATH 或目标目录已有可用 hcloud 则输出路径并跳过；加 -Force 强制重装。
 # 安装/幂等命中后，脚本会把安装目录写入「用户 PATH」（去重），新终端或新进程即可直接 `hcloud`，无需再传 --hcloud。
 # 注意：%TEMP% 兜底目录重启清理后 PATH 条目会失效并自动清死链；持续可用请让脚本走主路径或用 -Dir 指定固定目录。
 # 成功输出: #hcloud=<exe 绝对路径>
 ```
+
+> **下载源失效兜底（Windows）**：`install-hcloud.ps1` 下载失败（404/`NoSuchBucket` 等）时 → 参照官方文档更新脚本内 `$ZipUrl`：[在Windows系统上安装KooCLI](https://support.huaweicloud.com/qs-hcli/hcli_02_003_01.html)（脚本失败提示已含该指引）。
 
 Verify installation:
 
@@ -341,7 +349,7 @@ Compressing the work directory into `/tmp/work.zip` fails.
 | `zip` command not found           | Linux: `yum install -y zip` / `apt install -y zip`；Windows: 使用 `Compress-Archive`  |
 | Disk full in /tmp                 | Free up temp directory space or use an alternative temp path                          |
 
-> **打包首选**：`node <skill>/scripts/build-detail-zip.mjs --readme <README.md> --resources <dir> --out <zip>`（跨平台零依赖，打包+校验一步到位），避免 `zip`/`Compress-Archive` 的平台差异。以下为备选平台命令。
+> **打包首选**：`node $SKILL_DIR/scripts/build-detail-zip.mjs --readme <README.md> --resources <dir> --out <zip>`（跨平台零依赖，打包+校验一步到位），避免 `zip`/`Compress-Archive` 的平台差异。以下为备选平台命令。
 
 ### 2. Details zip structure incorrect
 
@@ -588,11 +596,11 @@ The GET /camps API returns a non-200 response.
 ### 3. Selected activity is not accepting submissions
 
 **Problem:**
-Publish API returns `GALLERY.CAMP.UNAVAILABLE` for the selected activity, or the user attempts to select a camp that is not in "可投稿" status.
+Publish API returns `GALLERY.CAMP.UNAVAILABLE` for the selected activity, or the user attempts to select an activity that is not in "可投稿" status.
 
 **Solution:**
 
-- Re-query the activity list and determine each camp's submission status (see [api-spec.md — Submission Status Determination](api-spec.md#submission-status-determination) for the full status table).
-- Only present camps with "可投稿" status as selectable options.
-- If the user attempts to select a non-submittable camp, inform them: `该训练营当前状态为「<status>」，未开放投稿，请选择状态为「可投稿」的训练营。`
-- If no camps are currently submittable, inform the user and suggest checking back later or contacting the administrator.
+- Re-query the activity list and determine each activity's submission status (see [api-spec.md — Submission Status Determination](api-spec.md#submission-status-determination) for the full status table).
+- Only present activities with "可投稿" status as selectable options.
+- If the user attempts to select a non-submittable activity, inform them: `该活动当前状态为「<status>」，未开放投稿，请选择状态为「可投稿」的活动。`
+- If no activities are currently submittable, inform the user and suggest checking back later or contacting the administrator.

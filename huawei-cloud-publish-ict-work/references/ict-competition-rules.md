@@ -18,9 +18,9 @@
 
 ## 三、实验窗口与重提规则
 
-- **实验有效完成窗口**：2026-09-18 00:00 ~ 2026-11-08 24:00（+08:00）。提交/重提须在窗口内；截止后拒绝（`WINDOW_EXPIRED`）。
+- **实验有效完成窗口**：**以 A0 下发的该赛题所属活动窗口（`startsAt` ~ `endsAt`）为准**（各 AI 题窗口不同，如 2026-09-11 ~ 2026-11-07），技能侧用 `check-competition-window.mjs --start <startsAt> --end <endsAt>` 按此预检。**服务端已删除硬编码全局默认窗口**（2026-10-15）：活动缺起止时间、且管理面「大赛时间设置」（`competition_configs.module=experiment`）也未配置时，服务端 **fail-closed** 返回 `GALLERY.COMPETITION.EXPERIMENT_WINDOW_UNCONFIGURED`（503）——此时转述「大赛实验窗口未配置，请联系运营配置」并停止，**不得用任何本地默认日期继续提交**。提交/重提须在窗口内；截止后拒绝（`WINDOW_EXPIRED`）。
 - **AI 题一题一活动**：每个 AI 题对应一个 gallery 活动（`theme=ict_competition`），提交时 `trainingCampId` 必须由 A0 按 `problemId` 取得并一致（`CAMP_MISMATCH` 防错挂）。
-- **重提**：判题**未通过**允许不限次重提（窗口内），`attemptNo` 递增；判题**通过即终态**不可再提交（`ALREADY_PASSED`）；判题**中**不可重复提交（`JUDGING`）。
+- **重提**：判题**未通过**可在窗口内重提，但**每题每人上限 3 次**（`attemptNo` = 该题已有提交数 + 1 递增；`failed` 且 `attemptNo≥3` → `ATTEMPT_LIMIT_EXCEEDED`，终态不可再提交）；判题**通过即终态**不可再提交（`ALREADY_PASSED`）；判题**中**不可重复提交（`JUDGING`）。
 - **计分**：固定每题 20 分，通过与否只由判题结果决定（与质量/用时无关）。
 
 ## 四、判题语义（skill 交互要点）

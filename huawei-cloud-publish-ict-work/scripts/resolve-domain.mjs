@@ -10,7 +10,7 @@
 //   node resolve-domain.mjs [--region cn-north-4] [--hcloud <path>]
 //
 // 行为:
-//   1. hcloud configure set --region=<region>（exit 0 才继续）
+//   1. hcloud configure set --region=<region>（尽力而为：失败只告警，region 在下方调用显式传入）
 //   2. hcloud IAM KeystoneListAuthDomains
 //   3. 从响应 JSON 提取 domain_id（首条 auth domain 的 domain.id）
 //   4. stdout: `#domain=<id> name=<domainName>`
@@ -75,8 +75,8 @@ for (let i = 0; i < args.length; i++) {
   node resolve-domain.mjs [--region ${REGION}] [--hcloud <exe路径>]
 
 行为:
-  1. hcloud configure set --region=<region>
-  2. hcloud IAM KeystoneListAuthDomains
+  1. hcloud configure set --region=<region>（尽力而为，失败不拦截）
+  2. hcloud IAM KeystoneListAuthDomains --cli-region=<region>
   3. 提取 domain_id
 
 退出码: 0=成功; 1=失败; 2=参数错误`);
@@ -94,6 +94,13 @@ function findHcloud() {
 }
 
 const hcloud = findHcloud();
+
+// 最近一次 tryExec 彻底失败时的原始输出：上层报错时透出真实原因，
+// 避免统一报「hcloud 未安装/不在 PATH」掩盖配置目录不可写等其它失败。
+let lastError = "";
+// 失败发生在「子进程创建层」（受限沙箱/安全策略下禁止 spawn 或管道，典型 EPERM）时置位。
+// 必须与 hcloud 自身失败区分：否则会被通用提示误判成「AK/SK 未配置或过期」而走错排查方向。
+let spawnBlocked = false;
 
 function tryExec(cmd) {
   // KooCLI 首次运行会交互确认隐私声明；非交互 stdin 下报 [USE_ERROR]，此时补一次管道输入 y 重试
@@ -113,27 +120,42 @@ function tryExec(cmd) {
     } catch (e) {
       const out = `${e.stdout || ""}${e.stderr || ""}`;
       if (attempt === 0 && isInteractivePrompt(out)) continue;
+      if (!out && /(EPERM|EACCES|ENOTSUP|EPIPE)/i.test(e.message || "")) spawnBlocked = true;
+      lastError = (out || e.message || "").trim();
       return null;
     }
   }
   return null;
 }
 
-// 1. configure set region
-const cfgOut = tryExec(`"${hcloud}" configure set --cli-region=${region} ${akskCliArgs().join(" ")}`);
-if (cfgOut === null) {
-  console.error(`❌ hcloud configure set --cli-region=${region} 失败。请检查 hcloud 是否安装且在 PATH 中。`);
-  console.error(`   Windows 常见: hcloud.exe 不在 PATH → 传 --hcloud <绝对路径>`);
-  console.error(`   安装引导见 references/troubleshooting.md#1-hcloud-not-installed`);
-  process.exit(1);
+// spawn 层被环境拒绝时的统一提示：与 hcloud 自身失败（凭证/权限）区分开，
+// 避免把「环境禁止创建子进程」误报成「AK/SK 未配置或过期」。
+function spawnBlockedHint() {
+  console.error(`   ⚠️ 本次失败来自子进程创建层（无 hcloud 输出）：当前环境禁止 spawn 或管道（受限沙箱/安全策略，典型 EPERM）。`);
+  console.error(`   处置：换到允许创建子进程的环境重跑；或先在 shell 手工执行 hcloud IAM KeystoneListAuthDomains 核对凭证。`);
 }
 
-// 2. KeystoneListAuthDomains
-const domainsOut = tryExec(`"${hcloud}" IAM KeystoneListAuthDomains ${akskCliArgs().join(" ")}`);
+// 1. configure set region（尽力而为）：写配置失败（如 ~/.hcloud 不可写 / 被安全策略限制）不致命——
+//    region 在下方 IAM 调用中以 --cli-region 显式传入，不依赖配置文件落盘结果。
+const cfgOut = tryExec(`"${hcloud}" configure set --cli-region=${region} ${akskCliArgs().join(" ")}`);
+if (cfgOut === null) {
+  console.error(`⚠️ hcloud configure set --cli-region=${region} 未成功（不拦截：region 已在下一条命令显式传入）。`);
+  if (lastError) console.error(`   hcloud 输出: ${lastError.split("\n")[0]}`);
+  if (spawnBlocked) spawnBlockedHint();
+  else console.error(`   常见原因: hcloud 配置目录不可写（如 ~/.hcloud 只读）；hcloud.exe 不在 PATH 时可传 --hcloud <绝对路径>`);
+}
+
+// 2. KeystoneListAuthDomains（显式 --cli-region，不依赖 configure set 是否落盘）
+const domainsOut = tryExec(`"${hcloud}" IAM KeystoneListAuthDomains --cli-region=${region} ${akskCliArgs().join(" ")}`);
 if (domainsOut === null) {
   console.error(`❌ hcloud IAM KeystoneListAuthDomains 失败。`);
-  console.error(`   常见: AK/SK 未配置或过期 → 设环境变量 HUAWEICLOUD_SDK_AK/SK[/SECURITY_TOKEN]（或别名 HUAWEICLOUD_AK/SK、HW_ACCESS_KEY/HW_SECRET_KEY）`);
-  console.error(`   排查见 references/troubleshooting.md#2-hcloud-credentials-not-configured`);
+  if (lastError) console.error(`   hcloud 输出: ${lastError.split("\n")[0]}`);
+  if (spawnBlocked) {
+    spawnBlockedHint();
+  } else {
+    console.error(`   常见: hcloud 不可执行 / AK/SK 未配置或过期 → 设环境变量 HUAWEICLOUD_SDK_AK/SK[/SECURITY_TOKEN]（或别名 HUAWEICLOUD_AK/SK、HW_ACCESS_KEY/HW_SECRET_KEY）`);
+    console.error(`   排查见 references/troubleshooting.md#2-hcloud-credentials-not-configured`);
+  }
   process.exit(1);
 }
 

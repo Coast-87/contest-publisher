@@ -9,7 +9,7 @@
 //   node ensure-gitcode-credential.mjs
 //
 // 行为:
-//   1. 检测本机已有 GitCode 凭证（git credential fill / ~/.git-credentials / $GITCODE_TOKEN / cmdkey）
+//   1. 检测本机已有 GitCode 凭证（git credential fill / ~/.git-credentials / $GITCODE_TOKEN / cmdkey / ~/.gitcode/auth.toml）
 //   2. 有凭证 → exit 0，stdout "#credential=found source=<来源>"
 //   3. 无凭证 → exit 0，stdout "#credential=missing"，指引执行 gitcode-oauth.ensure.mjs
 //      （该脚本自带二进制自动安装：存在不下载，缺失自动装至用户级工具目录）
@@ -34,6 +34,9 @@ for (let i = 0; i < args.length; i++) {
 用法:
   node ensure-gitcode-credential.mjs
 
+来源（#credential=found source=…）:
+  git-credential-fill | git-credentials-file | env-GITCODE_TOKEN | cmdkey(Windows) | gitcode-auth-toml(OAuth)
+
 退出码:
   0 = 有凭证（#credential=found）或无凭证可走 OAuth（#credential=missing）`);
     process.exit(0);
@@ -45,11 +48,27 @@ function tryExec(cmd) {
   catch { return ""; }
 }
 
+// `git credential fill` 的 protocol/host 经 stdin 喂入，不走 shell 内建 echo：
+// dash（Debian/Ubuntu 的 /bin/sh）的 echo 不支持 -e，`echo -e "…" | git credential fill`
+// 会把字面 "-e" 当成首行凭据属性喂给 git → 「已配置 credential helper 也检测不到凭证」。
+// GIT_TERMINAL_PROMPT=0：helper 无凭证时禁止 git 打开 /dev/tty 交互索要用户名/口令（避免挂起到超时）。
+function tryGitCredentialFill() {
+  try {
+    return execSync("git credential fill", {
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["pipe", "pipe", "ignore"],
+      input: "protocol=https\nhost=gitcode.com\n\n",
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    }).trim();
+  } catch { return ""; }
+}
+
 // ---- 1. 检测本机已有凭证 ----
 let credSource = "";
 
 // git credential fill
-const fillOut = tryExec('echo -e "protocol=https\\nhost=gitcode.com" | git credential fill 2>/dev/null');
+const fillOut = tryGitCredentialFill();
 if (fillOut && fillOut.includes("password=")) credSource = "git-credential-fill";
 
 // ~/.git-credentials
@@ -71,6 +90,21 @@ if (!credSource) {
 if (!credSource && process.platform === "win32") {
   const cmdkeyOut = tryExec('cmdkey /list:git:https://gitcode.com 2>nul');
   if (cmdkeyOut) credSource = "cmdkey";
+}
+
+// ~/.gitcode/auth.toml（OAuth 登录后的 token 落盘点）
+// 判定必须与 gitcode-oauth.ensure.mjs 的 main() 同源（剥 BOM 后须以 `access_token =` 开头），
+// 否则会出现「本脚本报 #credential=missing、gitcode-oauth.ensure.mjs 报 #oauth=ready」的自相矛盾，
+// 让 agent 多走一轮无意义的 OAuth 引导（Linux 无 cmdkey 时必现）。
+// 路径与 gitcode-oauth.ensure.mjs 一致地尊重 GITCODE_HOME 覆盖。
+if (!credSource) {
+  const authFile = path.join(process.env.GITCODE_HOME || path.join(homedir(), ".gitcode"), "auth.toml");
+  if (existsSync(authFile)) {
+    try {
+      const raw = readFileSync(authFile, "utf8").replace(/^\uFEFF/, "");
+      if (/^access_token\s*=/.test(raw)) credSource = "gitcode-auth-toml";
+    } catch { /* 不可读 → 视为无凭证 */ }
+  }
 }
 
 if (credSource) {

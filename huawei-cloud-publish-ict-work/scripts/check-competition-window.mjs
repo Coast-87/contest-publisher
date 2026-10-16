@@ -1,38 +1,39 @@
 #!/usr/bin/env node
-// check-competition-window.mjs — ICT 大赛实验窗口预检（客户端 fail-early，服务端兜底 fail-closed）
+// check-competition-window.mjs — ICT 大赛实验窗口预检（客户端 fail-early，服务端 fail-closed）
 //
-// 默认窗口（与服务端 competitionRoutes.ts 常量一致）:
-//   start = 2026-09-18T00:00:00+08:00
-//   end   = 2026-11-08T23:59:59+08:00
-// 服务端优先按活动(training_camp)起止时间，缺失 fallback 全局常量；本脚本用全局常量作客户端预检，
-// 可通过 --start/--end 覆盖（如已从活动详情取得更精确窗口）。
+// 窗口来源：A0 下发的活动(training_camp)起止时间（`startsAt`/`endsAt`），活动缺窗口时服务端回退管理面
+// 「大赛时间设置」（competition_configs.module=experiment），两者都无 → 服务端 fail-closed
+// （GALLERY.COMPETITION.EXPERIMENT_WINDOW_UNCONFIGURED，503）。
+// 2026-10-15：服务端已删除硬编码全局默认窗口 → 本脚本同步取消默认值，--start/--end 必传。
 //
 // 用法:
-//   node check-competition-window.mjs [--start <iso|date>] [--end <iso|date>]
+//   node check-competition-window.mjs --start <iso|date> --end <iso|date>
 //
 // 成功(窗口内) exit 0，stdout: `#window=open remainingDays=<n>`（消息走 stderr）
 // 失败(窗口外) exit 1，stdout: `#window=closed reason=<before|after>`（stderr 含说明）
-// 参数错误 exit 2。
+// 参数错误 exit 2（缺 --start/--end 或时间非法）。
 
-// ===== 实验窗口（服务端 COMPETITION_WINDOW_START/END 同源） =====
-const DEFAULT_START = "2026-09-18T00:00:00+08:00";
-const DEFAULT_END = "2026-11-08T23:59:59+08:00";
+// ===== 实验窗口（2026-10-15：服务端已删除硬编码全局默认窗口，本脚本同步去掉默认值） =====
+// 窗口只来自真实数据：A0 下发的活动起止（活动窗口优先）→ 管理面「大赛时间设置」。
+// 故 --start/--end 必传：活动缺窗口且未配置时服务端 fail-closed（EXPERIMENT_WINDOW_UNCONFIGURED），
+// 客户端不得凭空兜底历史默认日期（否则会出现「本地判 open、服务端拒收」的口径分叉）。
 
 function parseArgs(argv) {
-  const cli = { start: DEFAULT_START, end: DEFAULT_END };
+  const cli = { start: null, end: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") {
       console.log(`check-competition-window.mjs — ICT 大赛实验窗口预检
 
 用法:
-  node check-competition-window.mjs [--start <iso|date>] [--end <iso|date>]
+  node check-competition-window.mjs --start <iso|date> --end <iso|date>
 
-默认窗口: start=${DEFAULT_START}  end=${DEFAULT_END}
-  （与服务端全局常量一致；服务端优先按活动起止时间，--start/--end 用于覆盖）
+窗口来源: A0 下发的活动起止（startsAt/endsAt）。2026-10-15 起服务端已删除硬编码全局默认窗口，
+  故 --start/--end 均必传（缺参 exit 2）——不得用本地默认日期兜底。
 
 stdout: #window=open remainingDays=<n>   （exit 0）
         #window=closed reason=<before|after>（exit 1）
+退出码: 0=窗口内; 1=窗口外; 2=参数错误（缺 --start/--end 或时间非法）
 `);
       process.exit(0);
     } else if (a === "--start") cli.start = argv[++i];
@@ -46,6 +47,11 @@ stdout: #window=open remainingDays=<n>   （exit 0）
 }
 
 const cli = parseArgs(process.argv.slice(2));
+// 缺参必须 exit 2（不得让 new Date(null) 退化成 1970 而误判「已截止」）
+if (!cli.start || !cli.end) {
+  console.error("❌ --start 与 --end 均必传（取 A0 下发该赛题活动的 startsAt/endsAt；服务端已无全局默认窗口）");
+  process.exit(2);
+}
 const start = new Date(cli.start);
 const end = new Date(cli.end);
 if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {

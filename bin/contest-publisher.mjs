@@ -69,7 +69,7 @@ const HELP = `contest-publisher — 纯代码审计、清理、建仓、上传�
   node bin/contest-publisher.mjs diff --run runs/<run-id> --stat       # 只看文件清单与行数
   node bin/contest-publisher.mjs create-repo --run runs/<run-id> --name contest-project --execute --confirm-create
   node bin/contest-publisher.mjs init-repo --run runs/<run-id> --remote https://gitcode.com/me/contest-project.git --author-name "Contest Author" --author-email author@example.invalid
-  node bin/contest-publisher.mjs push --run runs/<run-id> --execute --confirm-push
+  node bin/contest-publisher.mjs push --run runs/<run-id> --execute --confirm-push   # 推送凭证取 --token 或 GITCODE_ACCESS_TOKEN
   node bin/contest-publisher.mjs select-problem --run runs/<run-id> --skill-dir /path/to/huawei-cloud-publish-ict-work --number 1 --creds /path/to/sts-creds.json
   node bin/contest-publisher.mjs delete-run --run runs/<run-id> --confirm-delete
 `;
@@ -254,7 +254,7 @@ async function main(args) {
       if (verification.status !== 'passed') throw new Error(`Prepared work did not pass verify: ${verification.findings.map(item => item.category).join(', ')}`);
       await writeJson(path.join(runDir, 'evidence', 'verify.json'), verification);
       if (args.execute && !args.confirm_push) throw new Error('Remote push requires --confirm-push');
-      const result = pushPreparedRepo(workDir, { remote: args.remote, branch: args.branch ?? 'main', execute: Boolean(args.execute) });
+      const result = pushPreparedRepo(workDir, { remote: args.remote, branch: args.branch ?? 'main', execute: Boolean(args.execute), token: args.token || process.env.GITCODE_ACCESS_TOKEN });
       if (!result.dryRun) await writeJson(path.join(runDir, 'evidence', 'push.json'), result);
       jsonOutput(result);
       return;

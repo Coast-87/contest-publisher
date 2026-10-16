@@ -1,0 +1,19 @@
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -56,7 +56,7 @@
+ | 4 | `build-submit-params.mjs --out … --problem-id … --training-camp … --problem-name <name> --work-name … --git-url … --git-branch … --creds <sts-creds.json>` | `#params=<absPath>`（注入凭证 + 自动 Idempotency-Key；已过「锁一致性 + A0」校验） | exit 1=creds 缺失/A0 失败；exit 2=参数错/锁不一致/名称或活动不匹配 |
+ | 4 | `submit-ict-work.mjs <utf8-params.json>` | `#status=201`（输出 submissionId/attemptNo/judgeStatus/workId/workUrl） | 409/403 等失败 → 原样输出完整响应 |
+ 
+-> **鉴权前置**：身份由 **APIG 网关注入 `X-Domain-Id`**，gallery 反查 `accountId`——先 `resolve-domain.mjs` 得 `domainID`，`gen_sts.py` 生成最小权限 STS（`X-Tmp-Ak/X-Tmp-Sk/X-Security-Token`）经 open-api-public 鉴权；未装/未配置见 [troubleshooting#domain-id-resolution-issues](../huawei-cloud-publish-work-to-gallery/references/troubleshooting.md#domain-id-resolution-issues)（**只读该小节，勿整篇读**）。
++> **鉴权前置**：身份由 **APIG 网关注入 `X-Domain-Id`**，gallery 反查 `accountId`——先 `resolve-domain.mjs` 得 `domainID`，`gen_sts.py` 生成最小权限 STS（`X-Tmp-Ak/X-Tmp-Sk/X-Security-Token`）经 open-api-public 鉴权；未装/未配置见 [troubleshooting#domain-id-resolution-issues](references/troubleshooting.md#domain-id-resolution-issues)（**只读该小节，勿整篇读**）。**STS 有效期 900s**：凭证文件含 `_refresh` 元数据时，经 api.mjs 的调用（list-problems / build-submit-params / submit-ict-work）在 401 `GALLERY.AUTH.UNAUTHORIZED` 时自动原地刷新凭证并重试一次，无需重走 Step 0；无 `_refresh` 或刷新失败才按错误码表处置。
+ >
+ > **Git Bash 前置**：Windows Git Bash 下先 `source <skill>/scripts/setup-env.sh`（防 MSYS 把 `/v1/…` 转成 `C:/.../v1/…`）。PowerShell/CMD 无需。
+ 
+@@ -137,4 +137,4 @@
+ | [ict-api-spec.md](references/ict-api-spec.md) | A0/A1 契约、字段、响应、鉴权 | 仅响应结构异常时 |
+ | [ict-error-codes.md](references/ict-error-codes.md) | 错误码 + 处理策略 | 非 2xx 时查表 |
+ | [ict-competition-rules.md](references/ict-competition-rules.md) | 报名门槛/窗口/重提/身份 + 与普通发布边界 | Step 4 决策或用户问规则时 |
+-| [troubleshooting.md](../huawei-cloud-publish-work-to-gallery/references/troubleshooting.md) | domain/STS/git 凭证排查（同源脚本） | Step 0/3 出问题时**只读对应小节**（`#anchor`） |
+\ No newline at end of file
++| [troubleshooting.md](references/troubleshooting.md) | domain/STS/git 凭证排查（同源脚本） | Step 0/3 出问题时**只读对应小节**（`#anchor`） |
+\ No newline at end of file

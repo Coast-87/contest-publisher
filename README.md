@@ -12,7 +12,7 @@
 
 需要写出去的操作默认只生成计划，逐步确认后才执行。
 
-[![Release](https://img.shields.io/github/v/release/Coast-87/contest-publisher?label=release&color=e891b4)](https://github.com/Coast-87/contest-publisher/releases) [![Downloads](https://img.shields.io/github/downloads/Coast-87/contest-publisher/total?color=e9a83f)](https://github.com/Coast-87/contest-publisher/releases) [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-9d8ef0)](#下载与安装) [![Tests](https://img.shields.io/badge/tests-92%20passing-7dd8c3)](#测试) [![Node](https://img.shields.io/badge/node-%3E%3D22-7dd8c3?logo=nodedotjs&logoColor=white)](#从源码构建) [![Bun](https://img.shields.io/badge/build-bun-black?logo=bun&logoColor=white)](#从源码构建) ![Skill](https://img.shields.io/badge/skill-2026.10.09.001-e891b4)
+[![Release](https://img.shields.io/github/v/release/Coast-87/contest-publisher?label=release&color=e891b4)](https://github.com/Coast-87/contest-publisher/releases) [![Downloads](https://img.shields.io/github/downloads/Coast-87/contest-publisher/total?color=e9a83f)](https://github.com/Coast-87/contest-publisher/releases) [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-9d8ef0)](#下载与安装) [![Tests](https://img.shields.io/badge/tests-94%20passing-7dd8c3)](#测试) [![Node](https://img.shields.io/badge/node-%3E%3D22-7dd8c3?logo=nodedotjs&logoColor=white)](#从源码构建) [![Bun](https://img.shields.io/badge/build-bun-black?logo=bun&logoColor=white)](#从源码构建) ![Skill](https://img.shields.io/badge/skill-2026.10.15.003-e891b4)
 
 <img src="assets/screenshot-workbench.png" width="900" alt="工作台：左侧运行列表，中间七个阶段，右侧赛题与仓库配置" />
 
@@ -391,7 +391,7 @@ PE 头与其它段一个字节都不动，构建脚本会用 `scripts/inspect-ex
 Contest Publisher.exe  82.4 MiB
   架构: amd64 · PE32+ 是 · 子系统: windows-gui     ← 双击不弹控制台
   资源段: .rsrc rva=0x53a9000 size=272128
-  资源回查: 图标 PNG 256×256 40197 字节 · 图标组 1 项 32bpp · 版本信息 → Contest Publisher 0.1.0.0
+  资源回查: 图标 PNG 256×256 40197 字节 · 图标组 1 项 32bpp · 版本信息 → Contest Publisher 0.1.2.0
 与未打补丁的产物逐段比对：12/13 个段未改动（仅 .rsrc 变化）
 ```
 
@@ -415,6 +415,19 @@ dist/windows/contest-publisher-windows-x64.exe --help # Windows 命令行版
 ```
 
 编译产物是独立的原生可执行文件（macOS 是 Mach-O，Windows 是 PE32+），启动不需要 Node 或 Bun。运行 ICT Skill 脚本时的 node 运行时按以下顺序自动解析：环境变量 `CONTEST_PUBLISHER_NODE` → PATH 里的 node → 常见安装位置（macOS 的 homebrew / nvm / volta / fnm，Windows 的 Program Files / LOCALAPPDATA / Volta / fnm / scoop / nvm-windows）→ 兜底用打包进自身的 Bun 运行时执行（`BUN_BE_BUN=1`）。环境自检的 `node` 项会显示最终选用的运行时；机器上完全没有 node 也能完成提交。ICT Skill 目录、GitCode 凭证和 STS 凭证仍通过命令参数或环境提供。
+
+### 内置技能怎么升级（含定期自动更新）
+
+随包发布的 `huawei-cloud-publish-ict-work/` 是上游 [`Lingxi-HandsOn/gallery`](https://gitcode.com/Lingxi-HandsOn/gallery.git) 的 vendored 副本。平台按登记版本卡版本闸门（落后就 `status=outdated`，一键推送会被拦下），而本地相对上游有一批私有改动（子用户 AK/SK 的 SDK 回退、KooCLI 7.2.12 的传参绕行、STS 自动刷新说明等），直接覆盖上游会静默丢掉它们。这些改动固化在 `skill-overlays/`（`manifest.json` + `patches/*.patch`），升级由脚本完成：
+
+```bash
+npm run skill:check    # 打印本地 / 上游 / 平台三方版本，不改任何文件
+npm run skill:update   # 有新版本就升级 + 同步内置副本 + 重建 .app
+node scripts/update-skill.mjs --install-schedule    # 装定期任务（默认每天 09:30；--uninstall-schedule 移除）
+node scripts/update-skill.mjs --install-schedule --schedule weekly --schedule-time 08:00   # 也可改成每周
+```
+
+升级链路是「取上游整棵树 → 重放本地差异 → 断言本地特性仍在 → 校验（脚本语法 + 版本闸门）→ 原子替换 → 镜像内置副本 → 重建 `.app`」。所有动作先在临时目录里做，任何一步失败都不会碰现有技能目录；替换前会备份到 `~/.contest-publisher/skill-backups/`。上游某次改版让补丁打不上时，脚本 fail-fast 并保留原目录报告冲突，交回人工判断——**静默丢掉本地修复**正是这条链路要防的事故。定期任务在 macOS 上写成 LaunchAgent（`~/Library/LaunchAgents/com.contest-publisher.skill-update.plist`），日志在 `~/Library/Logs/contest-publisher-skill-update.log`；升级成功后用系统通知告知。
 
 ## 测试
 
@@ -469,7 +482,7 @@ node bin/contest-publisher.mjs list-runs --runs-root runs
 
 ## GitCode 建仓、推送和 ICT 提交
 
-创建仓库前设置访问令牌，但不要把令牌写入命令历史或 remote URL：
+创建仓库前设置访问令牌，但不要把令牌写入命令历史或 remote URL（`push` 也接受 `--token <令牌>`，效果相同）：
 
 ```bash
 export GITCODE_ACCESS_TOKEN='在安全凭证存储中读取的令牌'
@@ -483,6 +496,8 @@ node bin/contest-publisher.mjs push \
   --run runs/<run-id> \
   --execute --confirm-push
 ```
+
+推送走的是 git 自己的凭证通道，跟建仓用的 REST API 不是一套，所以令牌要显式交给 git。工具的做法是通过环境变量把令牌递给一个一次性 `credential.helper`，由它现场读出：不拼进 remote URL、不写任何文件、不进命令行（异常信息会原样带上整条命令）、也不落进系统钥匙串。因此本机不需要预先配置 GitCode 的 git 凭证；工作台里填的 Token 就够推送用了。
 
 先通过提取出的 ICT Skill 查询并锁定赛题：
 

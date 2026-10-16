@@ -10,7 +10,8 @@
 //     * 写 UTF-8 无 BOM 的 params.json（供 submit-ict-work.mjs）
 // v2026-09-30 目标校验（防错投）：
 //     * --problem-name 必填：与 Step 1 目标锁（.ict-target.json）三方一致校验，禁止静默改投
-//     * 调 A0（camps?problemId=）交叉校验 problemId ↔ 赛题名 / trainingCampId，杜绝 ID 行级混淆
+//     * 调 A0（camps?problemId=）交叉校验 problemId ↔ 赛题名 / trainingCampId，杜绝 ID 行级混淆；
+//       can_publish=false（赛题1 作品发布任务题）→ 明确拒绝，拦截提前到组参（A1 仍 403 兜底）
 //     * 目标锁带 createdAt，超过 STS 凭证有效期（900s）视为过期作废 → 新提交仅做 A0 校验
 //
 // 用法:
@@ -120,10 +121,11 @@ if (lock?.problemId && !lockIsStale(lock)) {
 }
 
 /// ---- A0 交叉校验：problemId ↔ 赛题名 / trainingCampId ----
+// --auto-refresh：凭证文件含 _refresh 时 401 自动刷新并重试一次（对齐 list-problems/submit-ict-work，
+// 覆盖 Step 1 与 Step 4 间隔超过 STS 凭证有效期 900s 的场景；无 _refresh 时 api.mjs 原样返回 401 不受影响）。
 let raw;
 try {
-  // STS 有效期仅 900s：凭证含 _refresh 元数据时交由 api.mjs 在 401 时原地刷新并重试一次（--no-refresh 可关闭）。
-  raw = execFileSync(process.execPath, [cli.api, "GET", "/v1/gallery/competition/camps", "--query", `problemId=${encodeURIComponent(cli.problemId)}`, "--creds-file", cli.creds, ...(cli.noRefresh ? [] : ["--auto-refresh"])], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  raw = execFileSync(process.execPath, [cli.api, "GET", "/v1/gallery/competition/camps", "--query", `problemId=${encodeURIComponent(cli.problemId)}`, "--creds-file", cli.creds, "--auto-refresh"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 } catch (e) {
   const out = (e.stdout?.toString() || "") + (e.stderr?.toString() || "");
   console.error(`❌ A0 校验失败（无法验证 problemId）：${out.split("\n")[0] || "调用 api.mjs 失败"}`);
@@ -138,6 +140,11 @@ try {
 if (!obj || typeof obj.name !== "string" || !statusLine.includes("200")) {
   console.error(`❌ problemId ${cli.problemId} 未在 A0 查询到赛题（PROBLEM_UNAVAILABLE），拒绝构建参数。`);
   console.error(`   请回 Step 1 用 list-problems.mjs --select 确认目标赛题（禁止改投其他赛题，除非用户明确同意）。`);
+  process.exit(2);
+}
+if (obj.can_publish === false) {
+  console.error(`❌ 赛题 ${cli.problemId}「${obj.name}」为作品发布任务题（赛题1，can_publish=false），不可提交，拒绝构建参数。`);
+  console.error(`   赛题1 需在做题面板领取任务后按要求完成（发布普通作品即完成）；请选择其他 AI 赛题。`);
   process.exit(2);
 }
 if (obj.name.trim() !== cli.problemName.trim()) {

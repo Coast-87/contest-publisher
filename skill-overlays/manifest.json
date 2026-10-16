@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "skill": {
+    "name": "huawei-cloud-publish-ict-work",
+    "upstream": {
+      "cloneUrl": "https://gitcode.com/Lingxi-HandsOn/gallery.git",
+      "apiPath": "Lingxi-HandsOn/gallery",
+      "branch": "master",
+      "skillPath": "skills/huawei-cloud-publish-ict-work"
+    },
+    "local": {
+      "path": "../huawei-cloud-publish-ict-work",
+      "note": "工作区里与 contest-publisher 并排的那份是权威副本；构建脚本优先用它"
+    },
+    "mirrors": [
+      {
+        "path": "huawei-cloud-publish-ict-work",
+        "note": "随仓库分发的内置快照，build-app.sh 会把它打进 .app/Contents/Resources"
+      }
+    ]
+  },
+  "overlays": [
+    {
+      "path": "scripts/gen_sts.py",
+      "patch": "patches/gen_sts.py.patch",
+      "why": "子用户 AK/SK 走官方 SDK 回退（hcloud 对全局服务一律 401）+ KooCLI 7.2.12 经 CLI 传参绕开签名缺陷 + 中文 Windows GBK 解码与日志行兼容 + 业务失败也 exit 0 的错误标记识别",
+      "mustContain": [
+        "def gen_sts_via_sdk",
+        "def aksk_cli_args",
+        "def run_hcloud",
+        "try_sdk_fallback",
+        "add_argument(\"--sdk\""
+      ]
+    },
+    {
+      "path": "SKILL.md",
+      "patch": "patches/SKILL.md.patch",
+      "why": "补回本机 STS 900s 自动刷新的说明；troubleshooting 链接改自包含相对路径（上游指向同源普通发布 skill，本副本没那一层）",
+      "mustContain": [
+        "STS 有效期 900s",
+        "references/troubleshooting.md"
+      ]
+    },
+    {
+      "path": "references/ict-error-codes.md",
+      "patch": "patches/ict-error-codes.md.patch",
+      "why": "401 条目补回自动刷新行为与处置（上游条目只写到「STS 凭证过期」）",
+      "mustContain": [
+        "自动原地刷新并重试一次"
+      ]
+    },
+    {
+      "path": "references/troubleshooting.md",
+      "from": "skills/huawei-cloud-publish-work-to-gallery/references/troubleshooting.md",
+      "rewrites": [
+        {
+          "from": "[SKILL.md — Prerequisites](../SKILL.md#prerequisites前置条件与依赖锁定)",
+          "to": "[SKILL.md — 脚本契约速查](../SKILL.md#脚本契约速查)"
+        }
+      ],
+      "why": "上游 ICT 目录不含此文件，本地从同源普通发布 skill 取一份并保持自包含（改掉跨技能链接，让锚点落在本技能 SKILL.md 真实存在的标题上）",
+      "mustContain": [
+        "### 1. hcloud not installed",
+        "### 2. hcloud credentials not configured"
+      ]
+    }
+  ]
+}

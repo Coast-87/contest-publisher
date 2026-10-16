@@ -8,20 +8,26 @@
 //   * agent 禁止从 #problem 文本行手抄/目测 ID，一律经 #selected 结构化行读取（根治行级混淆）。
 //
 // 用法:
-//   node list-problems.mjs [--api <api.mjs>] [--creds-file <json>] [--header "Name: v"]
+//   node list-problems.mjs [--brief] [--api <api.mjs>] [--creds-file <json>] [--header "Name: v"]
 //   node list-problems.mjs --select <n>   [--force] [--lock-file <f>] [同上选项]
 //   node list-problems.mjs --select-name <kw> [--force] [--lock-file <f>] [同上选项]
 //
 // 成功 exit 0，stdout:
 //   #status=<code>
-//   #problem <n> <name> [window=<start>~<end> status=<s>]          （列表模式，仅序号+名称+窗口，不含 ID）
+//   #window(default)=<start>~<end> status=<s>         （仅 --brief 且多数赛题窗口相同时出现）
+//   #problem <n> <name> [window=<start>~<end> status=<s>] [不可提交：作品发布任务题，禁止选择]
+//                                                    （列表模式，仅序号+名称+窗口，不含 ID；赛题1（作品发布任务题）
+//                                                     can_publish=false 仍展示但带不可提交标注，选择被拒）
+//   --brief：同一活动下多数赛题的 window/status 完全相同（实测 19/20 行重复），折成一行
+//            `#window(default)=…`，逐行只在偏离该默认值时补 window 后缀；不加 --brief 时逐字保持历史输出。
 //   #selected number=<n> problemId=<pid> trainingCampId=<camp> name=<name>   （选择模式，name 为末字段；ID 仅此出）
-//   空列表 exit 1: `#none`（当前无可用 AI 赛题）
+//   空列表/全部不可提交 exit 1: `#none`（stderr 含明确原因）
 //   请求失败 exit 1: 原样输出 api.mjs 响应（首行 #status）
 // 选择模式失败 exit 2:
 //   #selected-none reason=outofrange|nomatch
 //   #selected-ambiguous matches=<m>   随后 1) number=… name=…
 //   #selected-locked number=… problemId=… name=…   （锁指向他题，须 --force，改投须用户确认）
+//   #selected-forbidden number=… problemId=… name=…  （can_publish=false，作品发布任务题，禁止选择）
 // 参数错误 exit 2。
 
 import { execFileSync } from "node:child_process";
@@ -39,15 +45,16 @@ function printHelp() {
   console.log(`list-problems.mjs — 查询 ICT 大赛全部 AI 赛题（A0 /competition/camps），支持目标选择与锁定
 
 用法:
-  node list-problems.mjs [--api <api.mjs>] [--creds-file <json>] [--header "Name: v"]
+  node list-problems.mjs [--brief] [--api <api.mjs>] [--creds-file <json>] [--header "Name: v"]
   node list-problems.mjs --select <n> [--force] [--lock-file <f>] [...同上]
   node list-problems.mjs --select-name <kw> [--force] [--lock-file <f>] [...同上]
 
 选项:
   --api <f>            api.mjs 路径（默认同目录副本）
-  --creds-file <json>  STS 凭证文件，透传 api.mjs（open-api-public 前缀需要）；
-                       凭证含 _refresh 元数据时 401 自动刷新重试（对齐 api.mjs --auto-refresh）
+  --creds-file <json>  STS 凭证文件，透传 api.mjs（open-api-public 前缀需要）
   --header "N: v"      额外请求头（如 X-Domain-Id），可叠加
+  --brief              列表模式压缩：多数赛题窗口/状态相同时折成一行 #window(default)=…，
+                       逐行只在偏离默认时补后缀（省 token；默认关闭，输出与历史逐字一致）
   --select <n>         按列表序号选择目标赛题，输出 #selected 并写目标锁（>=1）
   --select-name <kw>   按名称关键词选择（唯一匹配时同 --select；多条 → #selected-ambiguous）
   --lock-file <f>      目标锁路径（默认 --creds-file 同目录 .ict-target.json，无 creds 时 ./）
@@ -61,7 +68,7 @@ stdout: #status=<code> 开头；列表模式随后每行 #problem <n> <name> [wi
 }
 
 const argv = process.argv.slice(2);
-const cli = { api: path.join(thisDir, "api.mjs"), headers: [], creds: null, select: null, selectName: null, lockFile: null, force: false };
+const cli = { api: path.join(thisDir, "api.mjs"), headers: [], creds: null, select: null, selectName: null, lockFile: null, force: false, brief: false };
 const expect = (i, name) => {
   const v = argv[i + 1];
   if (v === undefined) { console.error(`❌ ${name} 需要参数`); process.exit(2); }
@@ -77,6 +84,7 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === "--select-name") { cli.selectName = expect(i, "--select-name"); i++; }
   else if (a === "--lock-file") { cli.lockFile = expect(i, "--lock-file"); i++; }
   else if (a === "--force") cli.force = true;
+  else if (a === "--brief") cli.brief = true;
   else { console.error(`❌ 未知参数: ${a}`); process.exit(2); }
 }
 if (cli.select != null && cli.selectName != null) {
@@ -116,8 +124,9 @@ function writeLock(p, obj) {
 }
 
 // ---- 拉取 + 去重编号 ----
+// --auto-refresh：含 _refresh 元数据时 401 自动刷新 STS 凭证并重试一次（对齐 submit-ict-work.mjs，
+// 覆盖「等待用户选择赛题期间超过 900s 凭证有效期」的场景，过期不再裸 401）。
 const baseArgs = [cli.api, "GET", "/v1/gallery/competition/camps"];
-// STS 有效期仅 900s：凭证含 _refresh 元数据时交由 api.mjs 在 401 时原地刷新并重试一次。
 if (cli.creds) baseArgs.push("--creds-file", cli.creds, "--auto-refresh");
 for (const h of cli.headers) baseArgs.push("--header", h);
 
@@ -160,7 +169,8 @@ for (const it of items) {
   const pid = it.problemId ?? "";
   if (seen.has(pid)) continue;
   seen.add(pid);
-  problems.push({ number: problems.length + 1, pid, trainingCampId: it.trainingCampId ?? "", name: it.name ?? "", start: it.startsAt ?? "", end: it.endsAt ?? "", status: it.status ?? "" });
+  // can_publish=false（赛题1 作品发布任务题）：列表仍展示（供识别），但选择/提交均禁止
+  problems.push({ number: problems.length + 1, pid, trainingCampId: it.trainingCampId ?? "", name: it.name ?? "", start: it.startsAt ?? "", end: it.endsAt ?? "", status: it.status ?? "", canPublish: it.can_publish !== false });
 }
 
 function winSuffix(p) {
@@ -197,6 +207,12 @@ if (cli.select != null) {
     console.error(`❌ 序号 ${cli.select} 超出范围（可选 1..${problems.length}）。`);
     process.exit(2);
   }
+  if (!target.canPublish) {
+    console.log(`#selected-forbidden number=${target.number} problemId=${target.pid} name=${target.name}`);
+    console.error(`❌ 赛题 ${target.number}「${target.name}」为作品发布任务题（赛题1），不可提交，禁止选择。`);
+    console.error(`   赛题1 需在做题面板领取任务后按要求完成（发布普通作品即完成）；请选择其他 AI 赛题。`);
+    process.exit(2);
+  }
   selectTarget(target);
 }
 if (cli.selectName != null) {
@@ -213,12 +229,41 @@ if (cli.selectName != null) {
     console.error(`❌ 名称「${cli.selectName}」匹配 ${matches.length} 道赛题，请用序号精细化选择。`);
     process.exit(2);
   }
+  if (!matches[0].canPublish) {
+    console.log(`#selected-forbidden number=${matches[0].number} problemId=${matches[0].pid} name=${matches[0].name}`);
+    console.error(`❌ 赛题「${matches[0].name}」为作品发布任务题（赛题1），不可提交，禁止选择。`);
+    console.error(`   赛题1 需在做题面板领取任务后按要求完成（发布普通作品即完成）；请选择其他 AI 赛题。`);
+    process.exit(2);
+  }
   selectTarget(matches[0]);
 }
 
-// ---- 列表模式（原行为不变，仅移除行内 ID——ID 只能经 #selected 取得）----
-for (const p of problems) {
-  console.log(`#problem ${p.number} ${p.name}${winSuffix(p)}`);
+// ---- 列表模式（仅移除行内 ID——ID 只能经 #selected 取得）----
+// --brief：同一活动下多数赛题的 window/status 完全相同（实测 20 行里 19 行重复同一串），
+// 折成一行 `#window(default)=…`，逐行只在偏离默认值时补后缀——信息不减，字符大减。
+function briefDefault(ps) {
+  const counts = new Map();
+  for (const p of ps) {
+    const k = winSuffix(p).trim();
+    if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  let best = "";
+  let bestN = 0;
+  for (const [k, n] of counts) if (n > bestN) { best = k; bestN = n; }
+  return bestN > 1 ? best : ""; // 各题窗口互异（无重复）→ 不压缩，免得白打一行 default
 }
-console.error(`共 ${problems.length} 道 AI 赛题。`);
+const winDefault = cli.brief ? briefDefault(problems) : "";
+if (winDefault) console.log(`#window(default)=${winDefault.replace(/^window=/, "")}`);
+for (const p of problems) {
+  const suffix = cli.brief && winSuffix(p).trim() === winDefault ? "" : winSuffix(p);
+  console.log(`#problem ${p.number} ${p.name}${suffix}${p.canPublish ? "" : " [不可提交：作品发布任务题，禁止选择]"}`);
+}
+const selectable = problems.filter((p) => p.canPublish);
+if (selectable.length === 0) {
+  // 与脚本头/SKILL.md 契约一致：空列表与「全部不可提交」都在 stdout 打 `#none`（均由 exit 1 表示失败）
+  console.log("#none");
+  console.error("无可用赛题：赛题1 为作品发布任务题（不可提交），请先在做题面板领取赛题1任务，或等待 AI 赛题发布。");
+  process.exit(1);
+}
+console.error(`共 ${problems.length} 道赛题（${selectable.length} 道可提交）。`);
 process.exit(0);

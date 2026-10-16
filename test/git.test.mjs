@@ -2,13 +2,52 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { initPreparedRepo, pushPreparedRepo, reconcileRemoteHistory, validateCloneUrl } from '../src/git.mjs';
+import { gitPushCredentialArgs, initPreparedRepo, pushPreparedRepo, reconcileRemoteHistory, validateCloneUrl } from '../src/git.mjs';
 import { runGit } from '../src/process.mjs';
 
 test('rejects credential-bearing target remotes', () => {
   assert.throws(() => validateCloneUrl('https://user:token@gitcode.com/a/b.git'), /credential-free/);
   assert.throws(() => validateCloneUrl('https://gitcode.com/a/b'), /end with \.git/);
+});
+
+// 真实事故：配置里填了 GitCode 令牌也确认没过期，推送仍然报
+// "could not read Username for 'https://gitcode.com': Device not configured"——因为令牌
+// 只进 REST API，而推送走 git 自己的凭证通道。令牌必须现场交给 git，且不能出现在
+// 命令行里（异常信息会原样带上整条命令）。
+test('push hands the token to git through a one-shot helper, never the command line', () => {
+  const remote = 'https://gitcode.com/coastt/trip-planner.git';
+  const token = 'tok-test-abcdefghijklmnop';
+  // execute:false 只生成计划，不读工作目录，所以给一个不存在的目录也安全。
+  const dry = pushPreparedRepo(path.join(os.tmpdir(), 'contest-git-absent'), { remote, execute: false, token });
+  assert.equal(dry.dryRun, true);
+  assert.equal(dry.credential, 'token');
+  assert.equal(dry.command.includes(token), false, '命令行里不能出现令牌');
+  assert.match(dry.command, /credential\.helper=/, '凭证经 helper 传递');
+
+  const { args, env } = gitPushCredentialArgs(remote, { token });
+  assert.equal(args[1], 'credential.helper=', '先清空 helper 列表：系统凭证不能抢先，令牌也不会被写进钥匙串');
+  // 真的问一次 git：能不能拿到凭证（这一步就是推送前 git 自己做的事）。
+  const out = execFileSync('git', [...args, 'credential', 'fill'], {
+    input: 'protocol=https\nhost=gitcode.com\n\n',
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  });
+  assert.match(out, /^username=coastt$/m);
+  assert.match(out, new RegExp(`^password=${token}$`, 'm'));
+
+  // 没给令牌时就保持原样：交给系统凭证，不引入任何额外参数。
+  const plain = pushPreparedRepo(path.join(os.tmpdir(), 'contest-git-absent'), { remote, execute: false });
+  assert.equal(plain.credential, undefined);
+  assert.equal(plain.command.includes('credential'), false);
+});
+
+test('token plumbing only applies to https remotes', () => {
+  const token = 'tok-test-abcdefghijklmnop';
+  assert.equal(gitPushCredentialArgs('git@gitcode.com:coastt/trip-planner.git', { token }), null);
+  assert.equal(gitPushCredentialArgs('http://gitcode.com/coastt/trip-planner.git', { token }), null);
+  assert.equal(gitPushCredentialArgs('https://gitcode.com/coastt/trip-planner.git', {}), null);
 });
 
 test('initializes a prepared copy with an explicit author identity and clean remote', async () => {

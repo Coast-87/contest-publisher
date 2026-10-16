@@ -19,8 +19,8 @@
 
 **GET** `/open-api-public/v1/gallery/competition/camps`
 
-- 不传 `problemId` → 返回全部 ICT 专属活动列表（本 skill 的 `list-problems.mjs` 走此路径）。
-- 传 `problemId` → 返回单个活动（`{trainingCampId, problemId, name}`）。
+- 不传 `problemId` → 返回全部 AI 赛题活动列表 + 赛题1（作品发布任务题，2026-10-15 起下发，本 skill 的 `list-problems.mjs` 走此路径）。
+- 传 `problemId` → 返回单个活动（`{trainingCampId, problemId, name, can_publish}`）；赛题1 无关联活动时返回 `{problemId, name, can_publish: false}`（无窗口字段）。
 - 逻辑：按题查 `competition_problem.trainingCampId`，校验 `theme=ict_competition` 且 `status=published`。
 
 **成功（列表）**：
@@ -28,12 +28,14 @@
 ```json
 { "success": true, "code": "GALLERY.SUCCESS", "data": { "items": [
   { "trainingCampId": "camp-xxx", "problemId": "p123", "name": "AI 云原生开发·题目 01",
-    "startsAt": "2026-09-18", "endsAt": "2026-11-08", "status": "published" }
+    "startsAt": "2026-09-18", "endsAt": "2026-11-08", "status": "published", "can_publish": true },
+  { "problemId": "p001", "name": "赛题1：xxx", "can_publish": false }
 ] } }
 ```
 
 - `trainingCampId`：提交 A1 时回填的必填字段（一题一活动，由 A0 取得，**不得用户自选**）。
 - `startsAt`/`endsAt`/`status`：活动窗口与状态（`training_camps`）——技能侧窗口预检用，**以活动实际窗口为准**，服务端提交时仍 fail-closed 兜底。
+- **`can_publish`（2026-10-15 赛题1防错选）**：赛题1（cloud 赛道第 1 题，作品发布任务题）恒为 `false`，其他赛题 `true`。`can_publish=false` **禁止选择**（`list-problems.mjs --select` 拒绝 `#selected-forbidden`）、**禁止提交**（`build-submit-params.mjs` 组参拒绝；A1 服务端 403 `GALLERY.COMPETITION.TASK_PROBLEM_UNSUBMITTABLE` 兜底）——赛题1 需在做题面板领取任务后按要求完成（发布普通作品即完成）。
 
 ## A1 提交 AI 赛题作品
 

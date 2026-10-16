@@ -92,6 +92,11 @@ if (status === "outdated") {
   if (prompt) console.log(prompt);
   process.exit(1);
 }
-// 平台不可达/响应异常 → 尽力而为
+// 平台不可达/响应异常 → 尽力而为（不阻塞）。但必须显式告警：
+// 查询本身失败时静默输出 skip，会把「技能已过时」这类本该拦截的判定一并吞掉。
+if (statusRes.status !== 200) {
+  console.error(`⚠️ 技能版本查询未成功（#status=${statusRes.status}），已按 status=skip 放行，本次未做版本比对。`);
+  console.error(`   排查：确认 GALLERY_API_HOST 可达，且当前环境允许创建子进程（受限沙箱下管道式捕获会 EPERM）。`);
+}
 console.log("status=skip");
 process.exit(0);

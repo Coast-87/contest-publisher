@@ -91,7 +91,7 @@ if (missing.length) {
 }
 
 if (!workName || workName.length > 30) {
-  console.error("❌ workName 必填且 ≤30 字符（真题库同名作品占名，见 clash 排查）");
+  console.error("❌ workName 必填且 ≤30 字符（同名作品占名会 409 GALLERY.WORK.DUPLICATE，见 references/ict-error-codes.md）");
   process.exit(2);
 }
 
@@ -156,6 +156,12 @@ function operationGuideFor(code) {
       return "请重新生成 STS 临时凭证（gen_sts.py）后重试。";
     case "GALLERY.WORK.PUBLISH_RATE_LIMITED":
       return "提交过于频繁被限流，请稍后重试。";
+    case "GALLERY.WORK.DUPLICATE":
+      // 判重键 = accountId + trainingCampId + workName（pending_review/review_failed 不占名）。
+      // 每个 AI 赛题各有独立 trainingCampId，故占名按赛题隔离：换名可解，换赛题不受本 409 限制。
+      return "该作品名已被你的账号在本赛题活动中占名（判重按「账号+活动+作品名」，占名按赛题隔离）。请改作品名后重新生成参数（新 Idempotency-Key）再提交；若既有同名作品就是本次要交的作品，请直接在做题面板查看其判题状态，不要重复提交。";
+    case "GALLERY.COMPETITION.ATTEMPT_LIMIT_EXCEEDED":
+      return "该题每人最多提交 3 次，次数已用尽（终态），无法再提交。";
     default:
       return "";
   }

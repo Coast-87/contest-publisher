@@ -1,4 +1,4 @@
-﻿# sync-src: publish-work-to-gallery/scripts/install-hcloud.ps1
+﻿# sync-src: huawei-cloud-publish-work-to-gallery/scripts/install-hcloud.ps1
 # install-hcloud.ps1 — Windows 一键安装华为云 KooCLI（hcloud），下载官方 zip 解压到「用户级统一工具目录」
 #
 # 用法（PowerShell）:
@@ -29,6 +29,8 @@ $ErrorActionPreference = "Stop"
 
 # ---- 参数 ----
 
+# 下载源兜底：若下载失败（404/NoSuchBucket 等），参照官方文档更新此 URL:
+#   https://support.huaweicloud.com/qs-hcli/hcli_02_003_01.html （在Windows系统上安装KooCLI）
 $ZipUrl = "https://cn-north-4-hdn-koocli.obs.cn-north-4.myhuaweicloud.com/cli/latest/huaweicloud-cli-windows-amd64.zip"
 
 if (-not $Dir) {
@@ -104,7 +106,7 @@ Log "下载 KooCLI Windows zip → $Zip"
 try {
     Invoke-WebRequest -Uri $ZipUrl -OutFile $Zip -UseBasicParsing -TimeoutSec 120
 } catch {
-    Die "下载失败: $($_.Exception.Message)"
+    Die "下载失败: $($_.Exception.Message)（若下载源失效，参照官方文档更新 URL: https://support.huaweicloud.com/qs-hcli/hcli_02_003_01.html）"
 }
 if (-not (Test-Path $Zip)) { Die "下载产物缺失: $Zip" }
 
