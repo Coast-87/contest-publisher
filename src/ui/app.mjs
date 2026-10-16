@@ -501,8 +501,10 @@ function renderRun(){const r=state.run;if(!r){renderPipeline();renderActionHint(
 // 判题结果横幅：judgeStatus + failureReason（失败原因是"为什么没通过"的权威来源）。
 const jd=r.judgement,banner=$('judgeResult');
 if(jd&&jd.judgeStatus){banner.classList.remove('hidden');banner.className='banner '+(jd.judgeStatus==='passed'?'ok':jd.judgeStatus==='failed'?'error':'');banner.textContent=(jd.judgeStatus==='pending'?'⏳ 判题中':'判题结果：'+jd.judgeStatus)+'（attemptNo '+(jd.attemptNo??'?')+'／共 3 次机会）'+(jd.failureReason?'\\n原因：'+jd.failureReason:'');}
-else{banner.classList.add('hidden');banner.textContent='';}setEnabled('auditBtn',!!r.source&&!r.audit);setEnabled('prepareBtn',!!state.audit&&state.audit.summary.status!=='blocked');setEnabled('verifyBtn',!!r&&!!r.runDir&&!!state.audit);setEnabled('createRepoBtn',!!r&&!!r.runDir&&r.stage==='VERIFIED');setEnabled('initRepoBtn',!!state.repo);setEnabled('pushBtn',!!r&&!!r.runDir&&r.stage==='INITIALIZED');setEnabled('selectProblemBtn',!!r&&r.stage==='PUSHED');setEnabled('submitBtn',!!state.selected&&r.stage==='PROBLEM_LOCKED');setEnabled('executeSubmitBtn',!!state.selected&&r.stage==='PROBLEM_LOCKED');setEnabled('autoPushBtn',!!r&&!!r.runDir&&['VERIFIED','REPOSITORY_CREATED','INITIALIZED','PUSHED','PROBLEM_LOCKED'].includes(r.stage));setEnabled('judgeBtn',!!(r.submission?.submissionId||r.judgement));const hasWork=!!r&&WORK_STAGES.includes(r.stage);setEnabled('autoRunBtn',!!r&&!!r.source&&!hasWork);setEnabled('diffBtn',hasWork);setEnabled('scaffoldBtn',hasWork);$('copyMode').disabled=!r.source;$('copyMode').checked=r.mode==='copy';$('modeBadge').textContent=r.mode==='copy'?'搬运模式（原创增量豁免）':'严格模式';$('modeBadge').className=r.mode==='copy'?'badge amber':'badge';$('workDir').value=r.runDir?\`\${r.runDir}/work\`:'';$('openWorkBtn').disabled=!$('workDir').value;for(const id of ['fileSelect','newFileBtn','loadFileBtn','saveFileBtn'])$(id).disabled=!hasWork;// 仓库名与目标赛题：仓库名留空时自动跟随源仓库名，目标行常驻可见，避免"提交了不知道哪道题"。
-if(!$('cfgRepoName').value.trim()&&r.suggestedRepoName)$('cfgRepoName').value=r.suggestedRepoName;if(!$('repoName').value.trim()&&r.suggestedRepoName)$('repoName').value=r.suggestedRepoName;renderActionHint();renderTargetHint();}
+else{banner.classList.add('hidden');banner.textContent='';}setEnabled('auditBtn',!!r.source&&!r.audit);setEnabled('prepareBtn',!!state.audit&&state.audit.summary.status!=='blocked');setEnabled('verifyBtn',!!r&&!!r.runDir&&!!state.audit);setEnabled('createRepoBtn',!!r&&!!r.runDir&&r.stage==='VERIFIED');setEnabled('initRepoBtn',!!state.repo);setEnabled('pushBtn',!!r&&!!r.runDir&&r.stage==='INITIALIZED');setEnabled('selectProblemBtn',!!r&&r.stage==='PUSHED');setEnabled('submitBtn',!!state.selected&&r.stage==='PROBLEM_LOCKED');setEnabled('executeSubmitBtn',!!state.selected&&r.stage==='PROBLEM_LOCKED');setEnabled('autoPushBtn',!!r&&!!r.runDir&&['VERIFIED','REPOSITORY_CREATED','INITIALIZED','PUSHED','PROBLEM_LOCKED'].includes(r.stage));setEnabled('judgeBtn',!!(r.submission?.submissionId||r.judgement));const hasWork=!!r&&WORK_STAGES.includes(r.stage);setEnabled('autoRunBtn',!!r&&!!r.source&&!hasWork);setEnabled('diffBtn',hasWork);setEnabled('scaffoldBtn',hasWork);$('copyMode').disabled=!r.source;$('copyMode').checked=r.mode==='copy';$('modeBadge').textContent=r.mode==='copy'?'搬运模式（原创增量豁免）':'严格模式';$('modeBadge').className=r.mode==='copy'?'badge amber':'badge';$('workDir').value=r.runDir?\`\${r.runDir}/work\`:'';$('openWorkBtn').disabled=!$('workDir').value;for(const id of ['fileSelect','newFileBtn','loadFileBtn','saveFileBtn'])$(id).disabled=!hasWork;// 仓库名保持空白 = 跟随源仓库名（目标仓库行常驻可见，不会"提交了不知道哪道仓库"）。
+// 刻意不把 suggestedRepoName 回填进配置输入框：一填就会被当成"用户指定"持久化（localStorage
+// 与服务端设置两处），下个运行就带着上一个项目的仓库名，容易推错仓库。
+if(!$('repoName').value.trim()&&r.suggestedRepoName)$('repoName').value=r.suggestedRepoName;renderActionHint();renderTargetHint();}
 async function loadRun(dir){try{const previous=state.run?.runId;state.run=await api(\`/api/runs/\${encodeURIComponent(dir)}\`);state.run.runId=state.run.runId||dir.split('/').pop();if(previous&&previous!==state.run.runId)state.actionLog=null;state.reviewed=state.run.reviewedFindings||[];state.audit=state.run.audit?await api(\`/api/runs/\${encodeURIComponent(dir)}/audit\`):null;state.selected=state.run.selectedProblem;state.repo=state.run.repository;renderRun();renderFindings();if(state.run.stage!=='CREATED'&&state.run.stage!=='ACQUIRED'&&state.run.stage!=='AUDITED'&&state.run.stage!=='REVIEW_REQUIRED')await loadWorkFiles();await refreshRuns()}catch(e){toast(e.message,true)}}
 function renderFindings(){const box=$('findings');const pending=(state.audit?.findings??[]).filter(f=>['review','retain-attribution'].includes(f.disposition)&&!(state.reviewed??[]).includes(f.id));if(!pending.length){box.classList.add('hidden');box.innerHTML='';return}box.classList.remove('hidden');box.innerHTML='<h3 style="margin-top:20px">需要处理的发现</h3>'+pending.map(f=>\`<div class="finding"><span class="dot"></span><div><strong>\${esc(f.category)}</strong><p><code>\${esc(f.file||'全局')}</code> · \${esc(f.pattern||'')}</p></div><button class="btn" data-finding="\${esc(f.id)}">处理</button></div>\`).join('');document.querySelectorAll('[data-finding]').forEach(b=>b.onclick=()=>openReview(b.dataset.finding))}
 // 每个类别只接受合法决定：密钥只有「排除文件」一条路（放行=把凭证留在提交里，不给这个选项）。
@@ -547,6 +549,7 @@ $('acquireForm').onsubmit=async e=>{e.preventDefault();try{
     payload={sourceUrl:$('sourceUrl').value,ref:$('sourceRef').value,runsRoot:runsRoot||undefined};
   }
   const d=await api('/api/runs',{method:'POST',body:JSON.stringify(payload)});
+  await resetRepoNameCfg();
   toast(sourceModeLocal()?'已从本地代码包创建运行':'源仓库已拉取');await syncRunsRoot(true);await loadRun(d.runId||d.runDir);
 }catch(e){toast(e.message,true)}};
 $('auditBtn').onclick=async()=>{try{state.audit=await api(\`/api/runs/\${encodeURIComponent(runRef())}/audit\`,{method:'POST'});state.run=await api(\`/api/runs/\${encodeURIComponent(runRef())}\`);renderRun();renderFindings();toast('审计完成')}catch(e){toast(e.message,true)}};
@@ -587,7 +590,7 @@ toast(ok?'✅ 自动流水线完成':\`⚠ \${last?.detail||'流程中止'}\`,!o
 if(r.log){state.actionLog=r.log}
 await loadRun(runRef());}
 catch(e){toast(e.message,true)}
-finally{$('autoRunLabel').textContent='一键自动';renderRun();}};$('newRunBtn').onclick=()=>{clearRun();$('sourceUrl').focus()};
+finally{$('autoRunLabel').textContent='一键自动';renderRun();}};$('newRunBtn').onclick=async()=>{clearRun();await resetRepoNameCfg();$('sourceUrl').focus()};
 
 let editorPath=null;
 async function loadWorkFiles(){if(!state.run)return;try{const files=await api(\`/api/runs/\${encodeURIComponent(runRef())}/work-files\`);const select=$('fileSelect');const prior=editorPath;select.innerHTML=files.map(f=>\`<option value="\${esc(f.path)}">\${esc(f.path)} · \${esc(f.kind)}</option>\`).join('');if(files.length){editorPath=files.find(f=>f.path===prior)?.path||files.find(f=>f.path.endsWith('CONTRIBUTIONS.md'))?.path||files.find(f=>f.kind==='code')?.path||files[0].path;select.value=editorPath;await loadEditorFile()}else{$('codeEditor').value='';editorPath=null}}catch(e){toast(e.message,true)}}
@@ -685,6 +688,13 @@ async function saveCfgSynced(){
 }
 function saveCfg(){const cfg={};for(const id of CFG_FIELDS){const el=$(id);if(!el)continue;cfg[id]=el.type==='checkbox'?el.checked:el.value}localStorage.setItem(CFG_KEY,JSON.stringify(cfg));return cfg}
 function applyCfg(cfg){for(const id of CFG_FIELDS){const el=$(id);if(!el||!(id in cfg))continue;el.type==='checkbox'?(el.checked=!!cfg[id]):(el.value=cfg[id]??'')}}
+// 新建运行（以及刚创建完一个新运行）时把「作品 / 仓库名称」清回空白：留空即跟随源仓库名，
+// 这是默认语义。只动这一个键、不整份保存——免得顺手把配置面板里还没保存的临时改动落盘。
+async function resetRepoNameCfg(){
+  $('cfgRepoName').value='';
+  const cfg=loadCfg();cfg.cfgRepoName='';localStorage.setItem(CFG_KEY,JSON.stringify(cfg));
+  try{await api('/api/settings',{method:'POST',body:JSON.stringify({cfgRepoName:''})})}catch{}
+}
 function getCfg(){const cfg={repoName:$('cfgRepoName').value.trim(),gitToken:$('cfgGitToken').value.trim(),authorName:$('cfgAuthorName').value.trim(),authorEmail:$('cfgAuthorEmail').value.trim(),accountId:$('cfgAccountId').value.trim(),credsPath:$('cfgCredsPath').value.trim(),problemNumber:Number($('cfgProblemNumber').value||1),problemName:$('cfgProblemName').value.trim(),keepPaths:$('cfgKeepPaths').value.split('\\n').map(v=>v.trim()).filter(Boolean),executeSubmit:$('cfgExecuteSubmit').checked};return cfg}
 $('settingsBtn').onclick=()=>{applyCfg(loadCfg());$('settingsModal').classList.add('open')};
 $('cancelSettings').onclick=()=>$('settingsModal').classList.remove('open');
