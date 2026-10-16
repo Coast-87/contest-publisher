@@ -1,6 +1,6 @@
 {
   "name": "contest-publisher",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "Audit, prepare, verify, publish, and submit code-only competition workspaces.",

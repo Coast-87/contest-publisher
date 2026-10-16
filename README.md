@@ -391,7 +391,7 @@ PE 头与其它段一个字节都不动，构建脚本会用 `scripts/inspect-ex
 Contest Publisher.exe  82.4 MiB
   架构: amd64 · PE32+ 是 · 子系统: windows-gui     ← 双击不弹控制台
   资源段: .rsrc rva=0x53a9000 size=272128
-  资源回查: 图标 PNG 256×256 40197 字节 · 图标组 1 项 32bpp · 版本信息 → Contest Publisher 0.1.2.0
+  资源回查: 图标 PNG 256×256 40197 字节 · 图标组 1 项 32bpp · 版本信息 → Contest Publisher 0.1.3.0
 与未打补丁的产物逐段比对：12/13 个段未改动（仅 .rsrc 变化）
 ```
 
