@@ -55,6 +55,16 @@ for exe in "$STAGE/contest-publisher-windows-x64.exe" "$STAGE/Contest Publisher.
   rm -f "$exe.orig"
 done
 
+echo "==> [3c/6] 编译原生 WebView2 窗口宿主（真原生窗口，Win10/11 自带运行时）"
+if [ -f /c/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe ]; then
+  (cd native/windows && /c/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe -nologo     -target:winexe -platform:x64 -out:WebView2Host.exe     -r:webview2/Microsoft.Web.WebView2.Core.dll -r:webview2/Microsoft.Web.WebView2.WinForms.dll     -r:System.Windows.Forms.dll -r:System.Drawing.dll -r:System.dll -r:System.Net.dll -r:System.Core.dll     WebView2Host.cs)
+  cp native/windows/WebView2Host.exe native/windows/webview2/*.dll "$STAGE/"
+  echo "  原生宿主已就位：ContestPublisher.WebView2Host.exe + WebView2 DLL"
+  mv "$STAGE/WebView2Host.exe" "$STAGE/ContestPublisher.WebView2Host.exe"
+else
+  echo "  警告：未找到 .NET Framework csc，跳过原生宿主（启动器会走 Edge --app 路径）"
+fi
+
 echo "==> [4/6] 复制资源与内置 Skill"
 cp assets/icon.png assets/icon.svg assets/icon-mark.png assets/icon.ico "$STAGE/assets/"
 if [ -d "$SKILL_SRC" ]; then

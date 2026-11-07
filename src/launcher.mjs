@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
-import { PLATFORM, appWindowArgs, defaultLogDir, findChromium, openTarget } from './platform.mjs';
+import { PLATFORM, appWindowArgs, defaultLogDir, findChromium, openTarget, resolveSidecar } from './platform.mjs';
 
 // Windows 没有可用的系统 WebView 壳（macOS 那边是 native/main.swift 的 WKWebView），
 // 这里用 Edge/Chrome 的 --app 模式给出等价的「独立窗口」体验：没有地址栏、没有标签页。
@@ -17,6 +17,13 @@ export function defaultProfileDir({ platform = PLATFORM, env = process.env } = {
   const base = path.join(defaultLogDir({ platform, env }), 'browser-profile');
   // 进程内自增序号兜底同毫秒并发调用，保证每次会话目录必然唯一。
   return `${base}-${process.pid}-${Date.now().toString(36)}-${profileSeq += 1}`;
+}
+
+// 原生窗口宿主（WebView2，Win10/11 系统自带运行时）：窗口归本进程所有，与浏览器
+// 完全无关——不存在 Edge 的进程交接/秒退/叠开默认浏览器这一整类问题。打包后放在
+// 应用旁（sidecar 根目录）；找不到时启动器才落回 Edge --app 路径。
+export function resolveNativeHost({ exists = existsSync, roots } = {}) {
+  return resolveSidecar('ContestPublisher.WebView2Host.exe', { check: exists, roots });
 }
 
 export function launchWorkbenchWindow(url, { profileDir, platform = PLATFORM, env = process.env, exists = existsSync, spawnFn = spawn } = {}) {
@@ -56,10 +63,30 @@ export async function runWorkbenchSession(url, {
   launch = launchWorkbenchWindow,
   open = openTarget,
   cleanup = cleanupProfileDir,
+  nativeHost = resolveNativeHost,
+  spawnFn = spawn,
 } = {}) {
   if (platform !== 'win32') {
     open(url, { platform, kind: 'url' });
     return { mode: 'fallback-browser', browser: null, reason: 'non-windows' };
+  }
+  // 优先原生 WebView2 窗口；宿主缺失（老包/未知环境）或秒退才走 Edge --app 路径。
+  const hostPath = nativeHost({ platform });
+  if (hostPath) {
+    log(`原生窗口（WebView2）已启动：${hostPath}`);
+    const nativeStarted = Date.now();
+    try {
+      const child = spawnFn(hostPath, [url], { stdio: 'ignore', windowsHide: true });
+      child.on('error', () => {});
+      const nativeExit = await waitForExit(child);
+      const nativeAlive = Date.now() - nativeStarted;
+      if (nativeAlive >= minLifetimeMs) {
+        return { mode: 'app-window', browser: hostPath, exitCode: nativeExit, aliveMs: nativeAlive, native: true };
+      }
+      log(`原生窗口 ${nativeAlive}ms 内退出（exit=${nativeExit}），回退 Edge --app 模式`);
+    } catch (e) {
+      log(`原生窗口启动失败：${e.message}，回退 Edge --app 模式`);
+    }
   }
   const started = Date.now();
   let session = launch(url, { profileDir, platform, env });
