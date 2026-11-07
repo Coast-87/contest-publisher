@@ -2,6 +2,7 @@ import http from 'node:http';
 import { APP_HTML } from './ui/index.mjs';
 import { startApiServer } from './api-server.mjs';
 import { openTarget } from './platform.mjs';
+import { logInfo } from './logger.mjs';
 
 function routePath(rawUrl) {
   const url = new URL(rawUrl ?? '/', 'http://127.0.0.1');
@@ -26,8 +27,10 @@ export async function startUiServer({ host = '127.0.0.1', port = 0, runsRoot, op
   const originalClose = server.close.bind(server);
   server.close = callback => api.server.close(() => originalClose(callback));
   const address = server.address(); const url = `http://${host}:${address.port}`;
+  logInfo('ui-server', `工作台服务已监听：${url}`, `runsRoot=${api.workspace.root}`);
   // 工作台的「退出软件」按钮走这个回调：只监听 127.0.0.1，等于本机操作者按了退出。
   api.workspace.shutdown = () => {
+    logInfo('ui-server', '工作台「退出软件」被点击，进程退出');
     try { server.close(); } catch { /* 已经关了 */ }
     try { api.server.close(); } catch { /* 已经关了 */ }
     process.exit(0);

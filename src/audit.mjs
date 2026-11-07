@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { classifyPath, normalizeRelativePath, scanText, summarizeFindings } from './policy.mjs';
 import { runGit } from './process.mjs';
 import { exists, readJson, writeJson } from './store.mjs';
+import { logInfo } from './logger.mjs';
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
@@ -103,5 +104,6 @@ export async function auditRun(runDir) {
     findings,
   };
   await writeJson(path.join(root, 'evidence', 'audit.json'), result);
+  logInfo('audit', `审计完成 ${root}: ${summary.status}`, `文件=${index.length} 发现=${JSON.stringify(summary.byCategory ?? summary)}`);
   return result;
 }

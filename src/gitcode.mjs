@@ -1,6 +1,10 @@
 const DEFAULT_ENDPOINT = 'https://api.gitcode.com/api/v5/user/repos';
 const API_HOST = 'api.gitcode.com';
 
+import { logInfo, logWarn } from './logger.mjs';
+// 日志里绝不出现 token：只记 host + path。
+function logUrl(url) { try { const u = new URL(url); return `${u.protocol}//${u.host}${u.pathname}`; } catch { return '(url)'; } }
+
 // ICT 平台只接受「所有人可见」的作品仓库，所以新建默认公开；privateRepo 仍可显式传 true。
 export function buildGitCodeCreateRequest({ name, description = '', privateRepo = false, defaultBranch = 'main', endpoint = DEFAULT_ENDPOINT, token }) {
   if (!token) throw new Error('GitCode access token is required through GITCODE_ACCESS_TOKEN');
@@ -59,7 +63,7 @@ export async function fetchGitCodeUserLogin(token) {
   const text = await response.text();
   let data;
   try { data = JSON.parse(text); } catch { data = {}; }
-  if (!response.ok || !data.login) throw new Error(`GitCode user lookup failed (${response.status})`);
+  if (!response.ok || !data.login) { logWarn('gitcode', `查询账号失败 HTTP ${response.status}: ${logUrl(url)}`); throw new Error(`GitCode user lookup failed (${response.status})`); }
   return data.login;
 }
 
@@ -72,7 +76,7 @@ export async function fetchGitCodeRepo({ owner, repo, token }) {
   const text = await response.text();
   let data;
   try { data = JSON.parse(text); } catch { data = {}; }
-  if (!response.ok) throw new Error(`GitCode repository lookup failed (${response.status})`);
+  if (!response.ok) { logWarn('gitcode', `查询仓库失败 HTTP ${response.status}: ${logUrl(url)}`); throw new Error(`GitCode repository lookup failed (${response.status})`); }
   const fullName = data.full_name ?? path;
   const webUrl = data.web_url ?? `https://gitcode.com/${fullName}`;
   const cloneUrl = data.http_url_to_repo ?? `${webUrl}.git`;
@@ -96,10 +100,12 @@ export async function createOrReuseGitCodeRepo(options) {
 
 export async function createGitCodeRepo(options) {
   const request = buildGitCodeCreateRequest(options);
+  logInfo('gitcode', `建仓请求: ${request.method} ${logUrl(request.url)}`, `name=${options.name} private=${options.privateRepo === true}`);
   let response;
   try {
     response = await fetch(request.url, { method: request.method, headers: request.headers, body: JSON.stringify(request.body), redirect: 'error' });
   } catch (error) {
+    logWarn('gitcode', `建仓请求网络失败: ${error.message}`);
     throw new Error(`GitCode repository creation request failed: ${String(error.message).replaceAll(options.token, '[REDACTED]')}`);
   }
   const text = await response.text();
@@ -107,12 +113,14 @@ export async function createGitCodeRepo(options) {
   try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 1000) }; }
   if (!response.ok) {
     const message = String(data.message ?? data.error ?? 'API error').replaceAll(options.token, '[REDACTED]');
+    logWarn('gitcode', `建仓失败 HTTP ${response.status}: ${message}`);
     throw new Error(`GitCode repository creation failed (${response.status}): ${message}`);
   }
   const fullName = data.full_name ?? data.path_with_namespace ?? null;
   const webUrl = data.web_url ?? data.html_url ?? (fullName ? `https://gitcode.com/${fullName}` : null);
   const cloneUrl = data.http_url_to_repo ?? data.clone_url ?? (fullName ? `${webUrl}.git` : null);
   if (!cloneUrl) throw new Error('GitCode response did not include full_name or a repository URL');
+  logInfo('gitcode', `建仓成功: ${fullName ?? options.name}`, `webUrl=${webUrl}`);
   return { id: data.id ?? null, name: data.name ?? options.name, webUrl, cloneUrl: cloneUrl.endsWith('.git') ? cloneUrl : `${cloneUrl}.git`, defaultBranch: data.default_branch ?? options.defaultBranch ?? 'main', private: data.private === true, public: data.public === true };
 }
 

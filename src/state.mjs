@@ -2,6 +2,7 @@ import path from 'node:path';
 import { lstat, readdir, rm } from 'node:fs/promises';
 import { exists, inside, readJson, writeJson } from './store.mjs';
 import { repoNameFromLocal, repoNameFromUrl } from './acquire.mjs';
+import { logInfo } from './logger.mjs';
 
 // Two verification policies:
 //   strict  (default) — work/ must contain at least one code file that differs from the pinned
@@ -29,6 +30,7 @@ export async function writeRunMode(runDir, mode, note = '') {
       ? '原创代码增量豁免：本运行按上游仓库直接搬运处理，其余门禁（凭证、语法、文档、贡献记录）仍然生效。'
       : '严格模式：work/ 必须存在相对固定 commit 的原创代码增量。',
   });
+  logInfo('state', `运行模式切换为 ${mode}`, `runDir=${root}${note ? ` note=${note}` : ''}`);
   return mode;
 }
 
@@ -125,5 +127,6 @@ export async function deleteRun(runDir, { force = false, root } = {}) {
     }
   }
   await rm(target, { recursive: true, force: true });
+  logInfo('state', `运行实例已删除: ${target}${force ? '（force）' : ''}`);
   return { deleted: true, runId: path.basename(target), runDir: target };
 }

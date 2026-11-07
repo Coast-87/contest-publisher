@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { auditRun } from './audit.mjs';
 import { isKeptPath, isPlaceholderEmail, newPhonePattern, normalizeKeepPaths } from './policy.mjs';
 import { ensureDir, exists, inside, readJson, writeJson } from './store.mjs';
+import { logInfo } from './logger.mjs';
 
 const ABSOLUTE_USER_PATH = /\/(?:Users|home)\/[^/\s]+(?:\/[^\s"'`)]*)?|\/root\/[^\s"'`)]*/g;
 const CREDENTIAL_URL = /https?:\/\/[^\s/@:]+:[^\s/@]+@/gi;
@@ -85,6 +86,7 @@ export async function prepareRun(runDir, options = {}) {
   }
   const projectName = safeProjectName(options.name);
   const root = path.resolve(runDir);
+  logInfo('prepare', `开始生成工作副本: ${projectName}`, `runDir=${root}`);
   const source = path.join(root, 'source');
   const work = path.resolve(options.output ?? path.join(root, 'work'));
   if (!inside(root, work) || work === source) throw new Error('Prepared work directory must be inside the run and differ from source');
@@ -168,6 +170,7 @@ export async function prepareRun(runDir, options = {}) {
   };
   await writeJson(path.join(root, 'evidence', 'prepare.json'), manifest);
   await writeJson(path.join(work, '.contest-publisher-manifest.json'), { schemaVersion: 1, keepPaths, copied: manifest.copied.map(({ path, kind, preparedSha256 }) => ({ path, kind, preparedSha256 })) });
+  logInfo('prepare', `工作副本完成: ${work}`, `复制=${copied.length} 脱敏替换=${replacements.length} 排除=${manifest.excluded.length}`);
   return { workDir: work, manifest };
 }
 

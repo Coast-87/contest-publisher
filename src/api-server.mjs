@@ -19,6 +19,7 @@ import { diffRun } from './diff.mjs';
 import { scaffoldRun } from './scaffold.mjs';
 import { CONFIG_KEYS, SECRET_CONFIG_KEYS, configDir, defaultLocalSourcesDir, defaultRunsRoot, ensureDir, ensureLocalSourcesDir, exists, inside, readJson, readSettings, resolveRunsRoot, writeJson, writeSettings } from './store.mjs';
 import { classifyPath, isKeptPath, normalizeKeepPaths, normalizeRelativePath } from './policy.mjs';
+import { describeError, logDebug, logError, logInfo, logWarn } from './logger.mjs';
 
 const MAX_BODY = 2 * 1024 * 1024;
 // 一键推送是单个长请求，工作台靠轮询 /auto-push-progress 拿分步进度；按 runDir 保留最近一次。
@@ -131,8 +132,27 @@ async function switchRunsRoot(workspace, candidate) {
 export async function handleApiRequest(req, res, target) {
   const workspace = toWorkspace(target);
   let root = workspace.root;
+  // 请求级日志：每次 API 调用都留痕（method + 路径 + 耗时 + 结果状态）。
+  // 高频轮询（health / 进度查询）只在 debug 级别记，避免日志膨胀。
+  const requestStarted = Date.now();
+  const pathname0 = routePath(req.url);
+  const isPolling = pathname0 === '/api/health' || pathname0.endsWith('/auto-push-progress');
+  const logRequest = (status, note) => {
+    const line = `${req.method} ${pathname0} -> ${status}（${Date.now() - requestStarted}ms）${note ? ` ${note}` : ''}`;
+    if (isPolling) logDebug('api', line);
+    else logInfo('api', line);
+  };
+  res.on('finish', () => logRequest(res.statusCode));
   try {
       const pathname = routePath(req.url);
+      // 工作台（浏览器侧）错误/事件回传：前端 window.onerror 与 api() 失败都会打到这里。
+      if (req.method === 'POST' && pathname === '/api/client-log') {
+        const report = await body(req);
+        const level = ['debug', 'info', 'warn', 'error'].includes(report.level) ? report.level : 'info';
+        const sink = level === 'error' ? logError : level === 'warn' ? logWarn : level === 'debug' ? logDebug : logInfo;
+        sink('ui', String(report.message ?? '(empty)'), report.detail ?? report.stack);
+        return json(res, 200, { ok: true });
+      }
       if (req.method === 'GET' && pathname === '/api/health') return json(res, 200, { ok: true, app: 'contest-publisher', platform: PLATFORM, packaged: sidecarRoots().length > 1 });
       if (req.method === 'GET' && pathname === '/api/runs-root') {
         return json(res, 200, { runsRoot: root, defaultRunsRoot: await defaultRunsRoot(), mutable: workspace.mutable !== false });
@@ -719,7 +739,7 @@ export async function handleApiRequest(req, res, target) {
         }
       }
       return json(res, 404, { error: 'Not found' });
-  } catch (error) { return json(res, 400, { error: error instanceof Error ? error.message : String(error) }); }
+  } catch (error) { logError('api', `请求处理失败 ${req.method} ${routePath(req.url)}`, describeError(error)); return json(res, 400, { error: error instanceof Error ? error.message : String(error) }); }
 }
 
 // 定位内置 ICT Skill：打包态看可执行文件旁边（mac 的 .app 是 Contents/Resources，

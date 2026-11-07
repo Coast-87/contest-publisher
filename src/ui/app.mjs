@@ -358,7 +358,11 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 // macOS 是访达，Windows 是资源管理器；用哪个词由 /api/health 报回来的平台决定。
 const isWindows=()=>state.platform==='win32';
 const revealLabel=()=>isWindows()?'在资源管理器中打开':'在 Finder 中打开';
-async function api(path,options={}){const r=await fetch(path,{headers:{'content-type':'application/json',...(options.headers||{})},...options});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d={raw:t}}if(!r.ok)throw new Error(d.error||d.message||t||\`HTTP \${r.status}\`);return d}
+// 前端错误/事件回传：落到服务端同一份日志里，界面侧的问题也能定位（fire-and-forget，不阻塞）。
+function reportToServer(level,message,detail){try{fetch('/api/client-log',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({level,message,detail})}).catch(()=>{})}catch{}}
+async function api(path,options={}){const r=await fetch(path,{headers:{'content-type':'application/json',...(options.headers||{})},...options});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d={raw:t}}if(!r.ok){const err=new Error(d.error||d.message||t||\`HTTP \${r.status}\`);reportToServer('error',\`API 失败 \${path}\`,err.message+' | '+(options.body||''));throw err}return d}
+window.addEventListener('error',e=>reportToServer('error','前端异常',\`\${e.message} @ \${e.filename}:\${e.lineno}:\${e.colno}\`));
+window.addEventListener('unhandledrejection',e=>reportToServer('error','前端未处理拒绝',String(e.reason&&e.reason.stack||e.reason)));
 function toast(message,bad=false){const d=document.createElement('div');d.textContent=message;if(bad)d.className='bad';$('toast').appendChild(d);setTimeout(()=>d.remove(),4200)}
 // 自绘确认框：WKWebView 没有 uiDelegate 时 window.confirm/prompt 直接返回 false/null，
 // 会让删除、建副本、新建文件这些按钮"点了没反应"。改成页面内弹窗后与宿主无关。

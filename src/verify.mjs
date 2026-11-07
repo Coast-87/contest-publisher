@@ -4,6 +4,7 @@ import { lstat, readFile, readdir } from 'node:fs/promises';
 import { classifyPath, isKeptPath, normalizeKeepPaths, scanText } from './policy.mjs';
 import { exists, readJson } from './store.mjs';
 import { checkJsSyntax } from './process.mjs';
+import { logInfo, logWarn } from './logger.mjs';
 
 const GENERATED_FILES = new Set(['README.md', 'UPSTREAM.md', 'CONTRIBUTIONS.md', '.contest-publisher-manifest.json']);
 // 工具自己的索引文件：内容是路径与哈希，扫它只会产生自伤误报。
@@ -108,6 +109,9 @@ export async function verifyPrepared(workDir, { runChecks = true, allowGit = fal
   }
   const blocking = findings.filter(item => item.disposition === 'block');
   const reviewable = findings.filter(item => item.disposition !== 'block' && item.disposition !== 'waived');
+  const status = blocking.length ? 'blocked' : reviewable.length ? 'review_required' : 'passed';
+  const sink = status === 'passed' ? logInfo : logWarn;
+  sink('verify', `静态校验 ${status}（${allowCopy ? 'copy' : 'strict'} 模式，${files.length} 个文件）`, blocking.length ? `阻塞项: ${blocking.map(item => item.category).join(', ')}` : undefined);
   return {
     schemaVersion: 1,
     verifiedAt: new Date().toISOString(),
@@ -117,6 +121,6 @@ export async function verifyPrepared(workDir, { runChecks = true, allowGit = fal
     syntaxChecked,
     codeDelta,
     findings,
-    status: blocking.length ? 'blocked' : reviewable.length ? 'review_required' : 'passed',
+    status,
   };
 }

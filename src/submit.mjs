@@ -2,6 +2,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { exists, writeJson } from './store.mjs';
 import { runGit, runNode, resolveScriptRuntime } from './process.mjs';
+import { logInfo, logWarn } from './logger.mjs';
 
 function execNode(script, args, { execute = true } = {}) {
   const { command, env } = resolveScriptRuntime();
@@ -38,6 +39,7 @@ export function parseSubmitOutput(output) {
 export async function buildSubmitPlan({ workDir, skillDir, problemId, trainingCampId, problemName, windowStart, windowEnd, creds, targetLock, domainId, execute = false, evidenceDir }) {
   const root = path.resolve(workDir);
   const skill = path.resolve(skillDir);
+  logInfo('submit', `${execute ? '真实提交' : 'dry-run 生成提交计划'}: ${problemName}`, `problemId=${problemId} workDir=${root}`);
   const scripts = path.join(skill, 'scripts');
   for (const file of ['check-ict-git-repo.mjs', 'read-git-info.mjs', 'extract-workname.mjs', 'build-submit-params.mjs', 'submit-ict-work.mjs']) {
     if (!(await exists(path.join(scripts, file)))) throw new Error(`ICT skill script not found: ${path.join(scripts, file)}`);
@@ -71,7 +73,9 @@ export async function buildSubmitPlan({ workDir, skillDir, problemId, trainingCa
     const submission = execNode(path.join(scripts, 'submit-ict-work.mjs'), [out], { execute: true });
     commands.push(submission.command);
     params.submissionOutput = submission.stdout;
+    logInfo('submit', `提交命令执行完成: ${workName}`, submission.stdout.split('\n').slice(-5).join(' | '));
   }
   await writeJson(path.join(path.dirname(out), 'submit-plan.json'), params);
+  if (!execute) logWarn('submit', '本次为 dry-run，未真实提交');
   return params;
 }

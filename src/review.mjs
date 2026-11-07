@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { auditRun } from './audit.mjs';
 import { readJson, writeJson } from './store.mjs';
+import { logInfo } from './logger.mjs';
 
 function validateDecision(finding, decision) {
   if (finding.disposition === 'block') throw new Error('Blocking findings, including secrets, must be removed from source and re-audited');
@@ -48,5 +49,6 @@ export async function reviewFinding(runDir, { findingId, decision, note }) {
   record.decisions = record.decisions.filter(item => item.findingId !== findingId);
   record.decisions.push({ findingId, category: finding.category, file: finding.file, decision, note: note.trim(), reviewedAt: new Date().toISOString() });
   await writeJson(file, record);
+  logInfo('review', `审计发现已裁决: ${findingId} -> ${decision}`, `file=${finding.file ?? '(无)'} note=${note.trim()}`);
   return { findingId, decision, auditFingerprint: audit.fingerprint };
 }

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir, lstat } from 'node:fs/promises';
 import { exists, readJson } from './store.mjs';
 import { CONTRIBUTIONS_LINE, GITIGNORE_TEMPLATE } from './prepare.mjs';
+import { logInfo } from './logger.mjs';
 
 // Files the tool generates into work/ — they have no upstream counterpart by design.
 const GENERATED_FILES = ['README.md', 'UPSTREAM.md', 'CONTRIBUTIONS.md', '.gitignore', '.contest-publisher-manifest.json'];
@@ -263,6 +264,7 @@ export async function diffRun(runDir, { context = 3, path: only, includeHunks = 
 
   const selected = only ? files.filter(file => file.path === only) : files;
   if (only && !selected.length) throw new Error(`No such file in the work copy: ${only}`);
+  logInfo('diff', `差异对比完成`, `改动文件=${summary.changedFiles} +${summary.addedLines}/-${summary.removedLines}（${only ?? '全部'}）`);
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),

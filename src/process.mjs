@@ -1,8 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { emptyGitConfig, hooksPathValue, knownNodePaths, whichSync } from './platform.mjs';
+import { logDebug, logError, logInfo } from './logger.mjs';
 
 export function run(command, args, options = {}) {
+  const started = Date.now();
+  // 记命令不记环境：token 之类都在 env 里，绝不落日志。
+  logDebug('process', `执行: ${command} ${args.join(' ')}`, options.cwd ? `cwd=${options.cwd}` : undefined);
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     env: { ...process.env, ...(options.env ?? {}) },
@@ -11,11 +15,17 @@ export function run(command, args, options = {}) {
     timeout: options.timeout ?? 120_000,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  if (result.error) throw new Error(`${command} failed to start: ${result.error.message}`);
+  const ms = Date.now() - started;
+  if (result.error) {
+    logError('process', `${command} 启动失败（${ms}ms）`, result.error.stack);
+    throw new Error(`${command} failed to start: ${result.error.message}`);
+  }
   if (result.status !== 0) {
     const detail = (result.stderr || result.stdout || '').trim().slice(-3000);
+    logError('process', `${command} ${args.join(' ')} 退出码 ${result.status ?? result.signal}（${ms}ms）`, detail);
     throw new Error(`${command} ${args.join(' ')} exited ${result.status ?? result.signal}: ${detail}`);
   }
+  logInfo('process', `${command} 完成 exit=0（${ms}ms）`);
   return result.stdout;
 }
 

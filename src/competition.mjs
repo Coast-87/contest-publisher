@@ -2,6 +2,7 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { exists, writeJson } from './store.mjs';
 import { runNode } from './process.mjs';
+import { logInfo } from './logger.mjs';
 
 // STS 有效期只有 900 秒：api.mjs 已带 --auto-refresh 原地刷新并重试一次；
 // 仍 401 说明无 _refresh 元数据或刷新失败，给出可操作提示而不是裸 JSON。
@@ -44,6 +45,7 @@ export async function listCompetitionProblems({ skillDir, creds }) {
     if (match) items.push({ number: Number(match[1]), name: match[2], window: match[3] ?? null, status: match[4] ?? null });
   }
   if (!items.length) throw new Error('ICT 平台未返回任何赛题（列表为空）');
+  logInfo('competition', `赛题列表已获取: ${items.length} 个`);
   return { ok: true, fetchedAt: new Date().toISOString(), items };
 }
 
@@ -120,5 +122,6 @@ export async function selectCompetitionProblem({ runDir, skillDir, number, creds
   // Verify the skill wrote the run-scoped target lock and it matches the selected record.
   const lock = JSON.parse(await readFile(lockFile, 'utf8'));
   if (lock.problemId !== problemId || lock.trainingCampId !== trainingCampId || lock.name?.trim() !== problemName) throw new Error('ICT target lock does not match the selected problem');
+  logInfo('competition', `赛题已锁定: #${selectedNumber} ${problemName}`, `problemId=${problemId} 窗口=${item.startsAt} ~ ${item.endsAt}`);
   return selection;
 }

@@ -3,6 +3,7 @@ import os from 'node:os';
 import { cp, mkdir, readdir, rename, stat } from 'node:fs/promises';
 import { ensureDir, ensureLocalSourcesDir, exists, inside, removeEmptyOrMissing, runId, writeJson } from './store.mjs';
 import { run, runGit } from './process.mjs';
+import { logInfo } from './logger.mjs';
 
 export function validateSourceUrl(value) {
   let parsed;
@@ -51,6 +52,7 @@ export async function listLocalSources(dir) {
 // 本地源快照：把文件夹原样复制（或把 zip 解压）到 run 的 source/，再初始化成单提交 git 仓库——
 // 审计 / 对比 / 验证都按 git 索引工作，这样本地源与 Git 源走完全相同的下游流程。
 export async function acquireLocalSource({ entryName, sourcesDir, runsRoot }) {
+  logInfo('acquire', `开始本地源快照: ${entryName}`, `sourcesDir=${sourcesDir ?? '(默认)'}`);
   const root0 = await ensureLocalSourcesDir(sourcesDir);
   const name = String(entryName ?? '').trim();
   if (!name || name.includes('/') || name.includes('\\') || name.startsWith('.')) throw new Error('本地源名称不合法');
@@ -108,6 +110,7 @@ export async function acquireLocalSource({ entryName, sourcesDir, runsRoot }) {
       setAt: new Date().toISOString(),
       consequence: '原创代码增量豁免：本运行按本地代码包直接发布处理，其余门禁（凭证、语法、文档、贡献记录）仍然生效。',
     });
+    logInfo('acquire', `本地源快照完成: ${name} -> ${root}`, `commit=${commit}`);
     return { runDir: root, sourceDir: source, source: sourceMeta };
   } catch (error) {
     await writeJson(path.join(root, 'acquire-failure.json'), { at: new Date().toISOString(), error: error.message });
@@ -156,6 +159,7 @@ export async function acquireSource({ sourceUrl, ref = 'HEAD', runsRoot }) {
   if (!runsRoot) runsRoot = process.env.CONTEST_PUBLISHER_RUNS || path.resolve(process.env.HOME || os.homedir(), 'contest-publisher-runs');
   const safeUrl = validateSourceUrl(sourceUrl);
   if (!/^[A-Za-z0-9._/-]+$/.test(ref) || ref.startsWith('-') || ref.includes('..')) throw new Error('Ref contains unsupported characters');
+  logInfo('acquire', `开始拉取源仓库: ${safeUrl} @ ${ref}`, `runsRoot=${runsRoot}`);
   const root = path.resolve(runsRoot, runId());
   await ensureDir(path.dirname(root));
   await removeEmptyOrMissing(root);
@@ -174,6 +178,7 @@ export async function acquireSource({ sourceUrl, ref = 'HEAD', runsRoot }) {
       note: 'Source checkout is immutable input; all preparation occurs in a separate work directory.',
     };
     await writeJson(path.join(root, 'source.json'), sourceMeta);
+    logInfo('acquire', `源仓库已固定 commit: ${commit}`, `runDir=${root}`);
     return { runDir: root, sourceDir: source, source: sourceMeta };
   } catch (error) {
     // Keep failed-run evidence rather than deleting a partially fetched source.

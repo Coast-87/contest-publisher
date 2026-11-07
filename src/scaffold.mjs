@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { exists, readJson } from './store.mjs';
+import { logInfo } from './logger.mjs';
 
 const LANGUAGE_BY_EXTENSION = {
   '.mjs': 'js', '.js': 'js', '.cjs': 'js', '.ts': 'js', '.jsx': 'js', '.tsx': 'js', '.vue': 'js', '.svelte': 'js',
@@ -205,6 +206,7 @@ export async function scaffoldRun(runDir, { lang, name = 'solution', force = fal
     await write(`solution/${ENTRY_BY_LANGUAGE.sh}`, shEntry(name, problem), 0o755);
   }
 
+  logInfo('scaffold', `脚手架已生成: ${language} / ${name}`, `runDir=${root}${problem ? ` 赛题=${problem}` : ''}`);
   return {
     language,
     problem,

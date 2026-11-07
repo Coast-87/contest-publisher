@@ -2,6 +2,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { exists } from './store.mjs';
 import { runGit } from './process.mjs';
+import { logInfo, logWarn } from './logger.mjs';
 
 export function validateCloneUrl(value) {
   let url;
@@ -68,7 +69,9 @@ export function initPreparedRepo(workDir, { remote, authorName, authorEmail, mes
   runGit(['-C', workDir, 'commit', '-qm', message]);
   runGit(['-C', workDir, 'branch', '-M', 'main']);
   runGit(['-C', workDir, 'remote', 'add', 'origin', safeRemote]);
-  return { remote: safeRemote, branch: 'main', commit: runGit(['-C', workDir, 'rev-parse', 'HEAD']).trim(), stagedFiles: staged.split('\n'), ...(whitespace.length ? { whitespace } : {}) };
+  const result = { remote: safeRemote, branch: 'main', commit: runGit(['-C', workDir, 'rev-parse', 'HEAD']).trim(), stagedFiles: staged.split('\n'), ...(whitespace.length ? { whitespace } : {}) };
+  logInfo('git', `init-repo 完成: ${result.commit.slice(0, 12)} -> ${safeRemote}`, `提交文件=${staged.split('\n').length}${whitespace.length ? ` 行尾空白告警=${whitespace.length}` : ''}`);
+  return result;
 }
 
 export function pushPreparedRepo(workDir, { remote, branch = 'main', execute = false, authorName, authorEmail, token, username } = {}) {
@@ -76,15 +79,22 @@ export function pushPreparedRepo(workDir, { remote, branch = 'main', execute = f
   if (!/^[A-Za-z0-9._/-]+$/.test(branch) || branch.startsWith('-')) throw new Error('Invalid branch name');
   const auth = gitPushCredentialArgs(safeRemote, { token, username });
   const argv = [...(auth?.args ?? []), 'push', '--set-upstream', safeRemote, `HEAD:${branch}`];
-  if (!execute) return { dryRun: true, remote: safeRemote, branch, command: `git ${argv.join(' ')}`, ...(auth ? { credential: 'token' } : {}) };
+  if (!execute) {
+    logInfo('git', `push 为 dry-run，未真实推送: ${safeRemote} ${branch}`);
+    return { dryRun: true, remote: safeRemote, branch, command: `git ${argv.join(' ')}`, ...(auth ? { credential: 'token' } : {}) };
+  }
+  logInfo('git', `开始真实推送: ${safeRemote} ${branch}`);
   const sync = reconcileRemoteHistory(workDir, safeRemote, branch, { authorName, authorEmail, auth });
   try {
     runGit(['-C', workDir, ...argv], { timeout: 300_000, secure: false, env: auth?.env });
   } catch (error) {
     // 令牌只从环境变量读，正常不会出现在 git 的输出里；万一出现也不能带进日志和证据文件。
+    logWarn('git', `推送被拒绝: ${safeRemote} ${branch}`);
     throw new Error(auth ? String(error.message).replaceAll(token, '[REDACTED]') : error.message);
   }
-  return { dryRun: false, remote: safeRemote, branch, commit: runGit(['-C', workDir, 'rev-parse', 'HEAD']).trim(), ...(sync ? { syncedWithRemote: sync } : {}), ...(auth ? { credential: 'token' } : {}) };
+  const pushed = { dryRun: false, remote: safeRemote, branch, commit: runGit(['-C', workDir, 'rev-parse', 'HEAD']).trim(), ...(sync ? { syncedWithRemote: sync } : {}), ...(auth ? { credential: 'token' } : {}) };
+  logInfo('git', `推送成功: ${pushed.commit.slice(0, 12)} -> ${safeRemote} ${branch}`);
+  return pushed;
 }
 
 // 目标仓库已经有内容（例如上一次提交准备的副本）时，直接推会被 non-fast-forward 拒绝。

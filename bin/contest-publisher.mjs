@@ -17,6 +17,7 @@ import { deleteRun, listRuns, readRunMode, statusRun, writeRunMode } from '../sr
 import { startUiServer } from '../src/ui-server.mjs';
 import { appendLauncherLog, openTarget } from '../src/platform.mjs';
 import { isHeadlessConsole, runWorkbenchSession } from '../src/launcher.mjs';
+import { describeError, logError, logInfo } from '../src/logger.mjs';
 
 const HELP = `contest-publisher — 纯代码审计、清理、建仓、上传与 ICT 大赛提交流水线
 
@@ -106,6 +107,7 @@ async function keepWorkbenchOpen(app, args) {
   const log = message => {
     const line = String(message);
     process.stdout.write(`${line}\n`);
+    logInfo('launcher', line);
     if (headless) appendLauncherLog(line);
   };
   if (args.no_open) { await new Promise(() => {}); return; }
@@ -292,9 +294,32 @@ async function main(args) {
   }
 }
 
+// 命令行里 --token / --creds 是敏感值，落日志前替换掉。
+const REDACT_KEYS = new Set(['token', 'creds', 'skill_dir']);
+function redactArgs(values) {
+  const out = { command: values.command };
+  for (const [key, value] of Object.entries(values)) {
+    if (key === 'command') continue;
+    out[key] = REDACT_KEYS.has(key) ? '<redacted>' : value;
+  }
+  return out;
+}
+
+// 全局兜底：任何没被业务层接住的异常/拒绝都先落日志再按默认行为退出。
+process.on('uncaughtException', error => {
+  logError('entry', '未捕获异常，进程即将退出', describeError(error));
+});
+process.on('unhandledRejection', reason => {
+  logError('entry', '未处理的 Promise 拒绝', describeError(reason));
+});
+
 try {
-  await main(parseArgs(process.argv.slice(2)));
+  const args = parseArgs(process.argv.slice(2));
+  logInfo('entry', `启动命令: ${args.command || 'workbench'}`, redactArgs(args));
+  await main(args);
+  logInfo('entry', `命令结束: ${args.command || 'workbench'}`);
 } catch (error) {
+  logError('entry', `命令失败: ${process.argv.slice(2).join(' ')}`, describeError(error));
   process.stderr.write(`ERROR: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 }
