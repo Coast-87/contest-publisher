@@ -21,6 +21,15 @@ function Die($m)      { Write-Host "    X $m" -ForegroundColor Red; Write-Host "
 
 if (-not (Test-Path $GenSts)) { Die "未找到 $GenSts —— 请把本脚本放在发行包根目录（与 huawei-cloud-publish-ict-work 同级）" }
 
+# ---- 0/4 清除网络下载标记（MOTW）----
+# GitHub 下载的 zip 解压后所有 exe 带 Zone.Identifier，未签名应用会被 SmartScreen
+# 静默拦截（双击没反应）。Unblock-File 递归清除，幂等。
+Step 0 "清除下载标记 (MOTW)"
+try {
+    Get-ChildItem $ScriptDir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File
+    Ok "已清除 $ScriptDir 下所有文件的下载标记"
+} catch { Warn "清除下载标记失败（不影响其余步骤）: $($_.Exception.Message)" }
+
 # ---- 1/4 KooCLI ----
 Step 1 "安装 KooCLI (hcloud)"
 try {

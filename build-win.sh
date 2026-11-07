@@ -107,6 +107,11 @@ Contest Publisher $VERSION · Windows 绿色版
 
 不要动的东西
   assets\ 与 huawei-cloud-publish-ict-work\ 要和 exe 放在一起，删了或挪走工作台会缺资源 / 缺 ICT Skill。
+
+双击没反应？
+  从网络下载的 zip 解压出来的 exe 带「下载标记」，SmartScreen 可能静默拦截未签名应用。
+  右键 ContestPublisher.WebView2Host.exe 与 Contest Publisher.exe → 属性 → 勾「解除锁定」；
+  或在 PowerShell 里执行: Get-ChildItem -Recurse -File | Unblock-File
 TXT
 
 echo "==> [6/6] 打包 zip"
