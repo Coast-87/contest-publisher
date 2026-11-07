@@ -127,7 +127,7 @@ test('sidecar roots let the packaged binary find assets and the bundled skill', 
 test('launcher log dir is per platform', () => {
   assert.match(defaultLogDir({ platform: 'win32', env: winEnv }), /Contest Publisher$/);
   assert.match(defaultLogDir({ platform: 'darwin', env: {}, home: '/Users/me' }), /Library\/Logs\/Contest Publisher$/);
-  assert.match(defaultProfileDir({ platform: 'win32', env: winEnv }), /browser-profile$/);
+  assert.match(defaultProfileDir({ platform: 'win32', env: winEnv }), /browser-profile-\d+-[0-9a-z]+-\d+$/);
 });
 
 test('zip extraction falls back to tools each platform ships with', () => {
