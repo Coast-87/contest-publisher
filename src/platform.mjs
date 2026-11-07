@@ -212,7 +212,8 @@ export function chromiumCandidates({ platform = PLATFORM, env = process.env, hom
 // --user-data-dir 是必需的：否则已有浏览器实例会接管这个 URL、启动进程立刻退出，
 // 启动器就分不清「窗口还在」和「窗口已关」，会在用户还没看完时就把服务关掉。
 export function appWindowArgs(url, { profileDir, width = 1440, height = 920 } = {}) {
-  const args = [`--app=${url}`, '--no-first-run', '--no-default-browser-check', `--window-size=${width},${height}`];
+  // --no-proxy-server：本机服务不许走系统代理（代理工具开着时 127.0.0.1 会被劫持）
+  const args = [`--app=${url}`, '--no-first-run', '--no-default-browser-check', '--no-proxy-server', `--window-size=${width},${height}`];
   if (profileDir) args.push(`--user-data-dir=${profileDir}`);
   return args;
 }
