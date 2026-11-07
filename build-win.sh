@@ -26,7 +26,11 @@ case "$(uname -s)" in
 esac
 
 mkdir -p dist
-rm -rf "$STAGE" "$OUT" "$ZIP"
+# dist/windows 可能被常驻进程的 cwd/句柄占住（目录删不掉但内容可清）——
+# 强 rm 会让 set -e 掐死整个构建。改为清内容、容忍目录残留。
+rm -rf "$STAGE" 2>/dev/null || true
+rm -f "$ZIP" 2>/dev/null || true
+if [ -d "$OUT" ]; then rm -f "$OUT"/* 2>/dev/null || true; rm -rf "$OUT"/huawei-cloud-publish-ict-work 2>/dev/null || true; fi
 mkdir -p "$STAGE/assets"
 
 echo "==> [1/6] 生成 Windows 图标 (assets/icon.ico)"
@@ -119,7 +123,15 @@ Contest Publisher $VERSION · Windows 绿色版
 TXT
 
 echo "==> [6/6] 打包 zip"
-mv "$STAGE" "$OUT"
+# OUT 目录可能被常驻句柄占住删不掉：存在则拷贝内容（并清掉此前失败构建嵌套进去的
+# .stage-windows），不存在才整目录改名。否则 mv 会把 stage 嵌进 OUT 里导致 zip 缺文件。
+if [ -d "$OUT" ]; then
+  rm -rf "$OUT/.stage-windows" 2>/dev/null || true
+  cp -a "$STAGE"/* "$OUT"/
+  rm -rf "$STAGE" 2>/dev/null || true
+else
+  mv "$STAGE" "$OUT"
+fi
 if command -v zip >/dev/null 2>&1; then
   (cd "$OUT" && zip -q -r "../$(basename "$ZIP")" .)
 elif command -v powershell >/dev/null 2>&1; then
