@@ -1,15 +1,15 @@
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { exists, writeJson } from './store.mjs';
-import { runGit, runNode, resolveScriptRuntime } from './process.mjs';
+import { runGit, runNodeAsync, resolveScriptRuntime } from './process.mjs';
 import { logInfo, logWarn } from './logger.mjs';
 
-function execNode(script, args, { execute = true } = {}) {
+async function execNode(script, args, { execute = true } = {}) {
   const { command, env } = resolveScriptRuntime();
   const prefix = env.BUN_BE_BUN ? 'BUN_BE_BUN=1 ' : '';
   const commandLine = `${prefix}${command} ${[script, ...args].map(arg => JSON.stringify(arg)).join(' ')}`;
   if (!execute) return { command: commandLine, stdout: '' };
-  return { command: commandLine, stdout: runNode(script, args, { timeout: 300_000 }) };
+  return { command: commandLine, stdout: await runNodeAsync(script, args, { timeout: 300_000 }) };
 }
 
 function parseLine(output, prefix) {
@@ -48,17 +48,17 @@ export async function buildSubmitPlan({ workDir, skillDir, problemId, trainingCa
   const lock = JSON.parse(await (await import('node:fs/promises')).readFile(targetLock, 'utf8'));
   if (lock.problemId !== problemId || lock.trainingCampId !== trainingCampId || String(lock.name).trim() !== problemName.trim()) throw new Error('ICT target lock does not match requested problem; select the problem through the ICT Skill first');
   const commands = [];
-  const version = execNode(path.join(scripts, 'check-version.mjs'), [], { execute });
+  const version = await execNode(path.join(scripts, 'check-version.mjs'), [], { execute });
   commands.push(version.command);
   if (execute && !/status=(?:ok|skip)/.test(version.stdout.split('\n')[0] ?? '')) throw new Error('ICT Skill version check did not pass');
-  const windowCheck = execNode(path.join(scripts, 'check-competition-window.mjs'), ['--start', windowStart, '--end', windowEnd], { execute });
+  const windowCheck = await execNode(path.join(scripts, 'check-competition-window.mjs'), ['--start', windowStart, '--end', windowEnd], { execute });
   commands.push(windowCheck.command);
   if (execute && !windowCheck.stdout.includes('#window=open')) throw new Error('Competition window is not open; stopping before submission');
-  const check = execNode(path.join(scripts, 'check-ict-git-repo.mjs'), [root], { execute });
+  const check = await execNode(path.join(scripts, 'check-ict-git-repo.mjs'), [root], { execute });
   commands.push(check.command);
   if (execute && !check.stdout.split('\n').some(line => line.includes('#allowed=1'))) throw new Error('ICT A3 repository precheck did not return #allowed=1; stop before submission');
-  const gitInfo = execute ? execNode(path.join(scripts, 'read-git-info.mjs'), [root]) : null;
-  const workNameResult = execute ? execNode(path.join(scripts, 'extract-workname.mjs'), [root]) : null;
+  const gitInfo = execute ? await execNode(path.join(scripts, 'read-git-info.mjs'), [root]) : null;
+  const workNameResult = execute ? await execNode(path.join(scripts, 'extract-workname.mjs'), [root]) : null;
   let gitUrl = execute ? parseLine(gitInfo.stdout, '#gitUrl=') : runGit(['-C', root, 'remote', 'get-url', 'origin']).trim();
   let gitBranch = execute ? parseLine(gitInfo.stdout, '#gitBranch=') : runGit(['-C', root, 'branch', '--show-current']).trim() || 'main';
   let workName = execute ? parseWorkName(workNameResult.stdout) : path.basename(root);
@@ -66,11 +66,11 @@ export async function buildSubmitPlan({ workDir, skillDir, problemId, trainingCa
   const out = path.resolve(evidenceDir ?? path.join(path.dirname(root), 'evidence'), 'submit-params.json');
   const buildArgs = [path.join(scripts, 'build-submit-params.mjs'), '--out', out, '--problem-id', problemId, '--training-camp', trainingCampId, '--problem-name', problemName, '--work-name', workName, '--git-url', gitUrl, '--git-branch', gitBranch, '--creds', path.resolve(creds), '--lock-file', path.resolve(targetLock)];
   if (domainId) buildArgs.push('--domain-id', domainId);
-  const built = execNode(buildArgs[0], buildArgs.slice(1), { execute });
+  const built = await execNode(buildArgs[0], buildArgs.slice(1), { execute });
   commands.push(built.command);
   const params = { out, problemId, trainingCampId, problemName, windowStart, windowEnd, targetLock: path.resolve(targetLock), workName, gitUrl, gitBranch, commands };
   if (execute) {
-    const submission = execNode(path.join(scripts, 'submit-ict-work.mjs'), [out], { execute: true });
+    const submission = await execNode(path.join(scripts, 'submit-ict-work.mjs'), [out], { execute: true });
     commands.push(submission.command);
     params.submissionOutput = submission.stdout;
     logInfo('submit', `提交命令执行完成: ${workName}`, submission.stdout.split('\n').slice(-5).join(' | '));

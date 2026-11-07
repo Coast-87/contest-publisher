@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { emptyGitConfig, hooksPathValue, knownNodePaths, whichSync } from './platform.mjs';
 import { logDebug, logError, logInfo } from './logger.mjs';
@@ -38,8 +38,55 @@ function gitHooksPath() {
   return (hooksPathCache = value);
 }
 
-export function runGit(args, options = {}) {
-  const secureEnv = options.secure === false ? (options.env ?? {}) : {
+// 异步版 run：不阻塞事件循环。WebView2 宿主看门狗每 2s 探一次 /api/health，
+// 连续失败约 10s 就关窗——spawnSync 一次跑十几秒（慢盘+杀软扫 86MB 运行时）会把
+// 服务冻结到被看门狗误杀（2026-11-07 Lenovo 实锤）。长调用一律走这里。
+export function runAsync(command, args, options = {}) {
+  const started = Date.now();
+  logDebug('process', `执行(异步): ${command} ${args.join(' ')}`, options.cwd ? `cwd=${options.cwd}` : undefined);
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: { ...process.env, ...(options.env ?? {}) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    let stdout = ''; let stderr = ''; let settled = false;
+    const CAP = 32 * 1024 * 1024;
+    const timer = setTimeout(() => {
+      settled = true;
+      try { child.kill(); } catch { /* 已经死了 */ }
+      logError('process', `${command} 超时被杀（${options.timeout ?? 120_000}ms）`);
+      reject(new Error(`${command} timed out after ${options.timeout ?? 120_000}ms`));
+    }, options.timeout ?? 120_000);
+    child.stdout.on('data', chunk => { if (stdout.length < CAP) stdout += chunk; });
+    child.stderr.on('data', chunk => { if (stderr.length < CAP) stderr += chunk; });
+    child.on('error', error => {
+      if (settled) return; settled = true; clearTimeout(timer);
+      logError('process', `${command} 启动失败（${Date.now() - started}ms）`, error.stack);
+      reject(new Error(`${command} failed to start: ${error.message}`));
+    });
+    child.on('close', (code, signal) => {
+      if (settled) return; settled = true; clearTimeout(timer);
+      const ms = Date.now() - started;
+      if (code !== 0) {
+        const detail = (stderr || stdout || '').trim().slice(-3000);
+        logError('process', `${command} ${args.join(' ')} 退出码 ${code ?? signal}（${ms}ms）`, detail);
+        reject(new Error(`${command} ${args.join(' ')} exited ${code ?? signal}: ${detail}`));
+        return;
+      }
+      logInfo('process', `${command} 完成 exit=0（${ms}ms）`);
+      resolve(stdout);
+    });
+  });
+}
+
+export function runNodeAsync(script, args = [], options = {}) {
+  const { command, env } = resolveScriptRuntime();
+  return runAsync(command, [script, ...args], { ...options, env: { ...(options.env ?? {}), ...env } });
+}
+
+export function runGit(args, options = {}) {  const secureEnv = options.secure === false ? (options.env ?? {}) : {
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: emptyGitConfig(),
     GIT_LFS_SKIP_SMUDGE: '1',

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { exists, writeJson } from './store.mjs';
-import { runNode } from './process.mjs';
+import { runNodeAsync } from './process.mjs';
 import { logInfo } from './logger.mjs';
 
 // STS 有效期只有 900 秒：api.mjs 已带 --auto-refresh 原地刷新并重试一次；
@@ -16,9 +16,9 @@ function mapIctError(error) {
   return error;
 }
 
-function invoke(script, args) {
+async function invoke(script, args) {
   try {
-    return runNode(script, args, { timeout: 60_000 });
+    return await runNodeAsync(script, args, { timeout: 60_000 });
   } catch (error) {
     throw mapIctError(error);
   }
@@ -33,7 +33,7 @@ export async function listCompetitionProblems({ skillDir, creds }) {
   if (!(await exists(listScript))) throw new Error(`ICT skill script not found: ${listScript}`);
   let output;
   try {
-    output = runNode(listScript, ['--creds-file', path.resolve(creds)], { timeout: 60_000 });
+    output = await runNodeAsync(listScript, ['--creds-file', path.resolve(creds)], { timeout: 60_000 });
   } catch (error) {
     throw mapIctError(error);
   }
@@ -70,7 +70,7 @@ export async function fetchSubmissionStatus({ skillDir, creds, submissionId }) {
   let output;
   try {
     // 路径不带前缀：api.mjs 会自动补 open-api-public。
-    output = runNode(apiScript, ['GET', `/v1/gallery/competition/submissions/${submissionId.trim()}`, '--creds-file', path.resolve(creds), '--auto-refresh'], { timeout: 60_000 });
+    output = await runNodeAsync(apiScript, ['GET', `/v1/gallery/competition/submissions/${submissionId.trim()}`, '--creds-file', path.resolve(creds), '--auto-refresh'], { timeout: 60_000 });
   } catch (error) {
     throw mapIctError(error);
   }
@@ -92,7 +92,7 @@ export async function selectCompetitionProblem({ runDir, skillDir, number, creds
   const lockFile = path.join(root, 'evidence', '.ict-target.json');
   const { mkdir } = await import('node:fs/promises');
   await mkdir(path.dirname(lockFile), { recursive: true });
-  const selectionOutput = invoke(listScript, ['--select', String(number), '--creds-file', path.resolve(creds), '--lock-file', lockFile]);
+  const selectionOutput = await invoke(listScript, ['--select', String(number), '--creds-file', path.resolve(creds), '--lock-file', lockFile]);
   const selectedLine = selectionOutput.split('\n').find(line => line.startsWith('#selected '));
   if (!selectedLine) throw new Error(`ICT selection did not return #selected: ${selectionOutput.trim()}`);
   const nameMatch = selectedLine.match(/\bname=(.*)$/);
@@ -101,7 +101,7 @@ export async function selectCompetitionProblem({ runDir, skillDir, number, creds
   const selectedNumber = Number(selectedLine.match(/\bnumber=(\d+)/)?.[1]);
   const problemName = nameMatch?.[1]?.trim();
   if (!problemId || !trainingCampId || !problemName || !selectedNumber) throw new Error(`Malformed #selected line: ${selectedLine}`);
-  const apiOutput = invoke(apiScript, ['GET', '/v1/gallery/competition/camps', '--query', `problemId=${encodeURIComponent(problemId)}`, '--creds-file', path.resolve(creds), '--auto-refresh']);
+  const apiOutput = await invoke(apiScript, ['GET', '/v1/gallery/competition/camps', '--query', `problemId=${encodeURIComponent(problemId)}`, '--creds-file', path.resolve(creds), '--auto-refresh']);
   const body = parseApiOutput(apiOutput);
   const item = body?.data?.items?.[0] ?? body?.data ?? null;
   if (!item || item.problemId !== problemId || item.trainingCampId !== trainingCampId || item.name?.trim() !== problemName) throw new Error('A0 problem details do not match the selected problem lock');

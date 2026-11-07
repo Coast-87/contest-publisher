@@ -181,8 +181,10 @@ class WebView2Host : Form
             probeFailures += 1;
         }
         Log("probe: failures=" + probeFailures);
-        // 5 次（10 秒）才判死，降低误杀概率
-        if (probeFailures >= 5)
+        // 10 次（20 秒）才判死：后端长任务（赛题列表/真实提交）即便异步化，慢盘+杀软
+        // 环境下单步仍可能超过 10 秒——2026-11-07 Lenovo 上 5 次（10 秒）阈值把健康
+        // 服务误杀过三次。阈值放宽 + 后端已改异步 spawn，双保险。
+        if (probeFailures >= 10)
         {
             watchdog.Stop();
             Log("watchdog close: server unreachable");
