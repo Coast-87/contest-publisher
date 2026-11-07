@@ -301,6 +301,8 @@ svg.i.sm{width:14px;height:14px}
 <div class="field"><label>提交作者名（留空自动读 git config）</label><input id="cfgAuthorName" placeholder="留空则使用全局 git config user.name" /></div>
 <div class="field"><label>提交邮箱（可选）</label><input id="cfgAuthorEmail" placeholder="留空则使用全局 git config user.email" /></div>
 <div class="field"><label>华为云账号 ID（Domain ID，32 位）</label><input id="cfgAccountId" placeholder="用于自动生成 STS" /></div>
+<div class="field"><label>华为云 AK（IAM 访问密钥，选填）</label><input id="cfgHwAk" placeholder="留空则用环境变量 / credentials.csv" /></div>
+<div class="field"><label>华为云 SK（与 AK 成对，仅存本机）</label><input id="cfgHwSk" type="password" placeholder="生成 STS / 一键安装环境时自动使用" /></div>
 <div class="field"><label>STS 凭证文件（绝对路径）</label><div style="display:flex;gap:6px"><input id="cfgCredsPath" placeholder="可手动填或点旁边按钮生成" style="flex:1" /><button class="btn" id="genStsBtn" style="flex:none;padding:6px 12px"><span id="genStsLabel">生成</span></button></div></div>
 <div class="field full"><label>环境未就绪（没装 hcloud / 提示缺少 AK-SK / SDK 依赖缺失）？点下面一键装好</label><div style="display:flex;gap:6px;align-items:center"><button class="btn" id="setupEnvBtn" style="flex:none;padding:6px 12px"><span id="setupEnvLabel">🛠 一键安装环境</span></button><span class="hint" id="setupEnvHint" style="font-size:12px">装 KooCLI + STS SDK 依赖 + 写 AK/SK 环境变量（幂等，可重复点）</span></div><div id="setupEnvLog" style="display:none;margin-top:6px;font-size:12px;color:var(--muted);white-space:pre-wrap;background:var(--bg,#fafafa);border:1px solid var(--stroke);border-radius:6px;padding:8px"></div></div>
 <div class="field"><label>赛题序号（点右侧按钮查看并选择全部赛题）</label><div style="display:flex;gap:6px"><input id="cfgProblemNumber" type="number" min="1" value="1" style="flex:1" /><button class="btn" id="fetchProblemsBtn" style="flex:none;padding:6px 12px">📋 选择</button></div></div>
@@ -668,7 +670,7 @@ $('copyMode').onchange=async()=>{
 
 // ===== Settings (localStorage-backed) =====
 const CFG_KEY='cp_settings_v1';
-const CFG_FIELDS=['cfgRepoName','cfgGitToken','cfgAuthorName','cfgAuthorEmail','cfgAccountId','cfgCredsPath','cfgProblemNumber','cfgProblemName','cfgKeepPaths','cfgLocalSourcesDir','cfgExecuteSubmit'];
+const CFG_FIELDS=['cfgRepoName','cfgGitToken','cfgAuthorName','cfgAuthorEmail','cfgAccountId','cfgCredsPath','cfgHwAk','cfgHwSk','cfgProblemNumber','cfgProblemName','cfgKeepPaths','cfgLocalSourcesDir','cfgExecuteSubmit'];
 function loadCfg(){try{return JSON.parse(localStorage.getItem(CFG_KEY)||'{}')}catch{return {}}}
 async function loadCfgSynced(){
   const local = loadCfg();

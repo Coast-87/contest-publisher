@@ -415,6 +415,15 @@ export async function handleApiRequest(req, res, target) {
       if (!ak) ak = process.env.HUAWEICLOUD_SDK_AK || '';
       if (!sk) sk = process.env.HUAWEICLOUD_SDK_SK || '';
       if (!ak || !sk) {
+        // 再退一层：配置面板里填过的 AK/SK（cfgHwAk/cfgHwSk）
+        try {
+          const saved = await readSettings(root);
+          ak = ak || saved.cfgHwAk || '';
+          sk = sk || saved.cfgHwSk || '';
+          if (ak && sk) note('从 ⚙ 配置面板读取已保存的 AK/SK');
+        } catch { /* 设置读不到继续走 needCreds */ }
+      }
+      if (!ak || !sk) {
         return json(res, 400, {
           error: '缺少 AK/SK：把控制台下载的 credentials.csv 放到程序目录，或在弹窗里输入',
           needCreds: true, log,
@@ -441,8 +450,17 @@ export async function handleApiRequest(req, res, target) {
       const outDir = path.join(root, '.sts');
       await mkdir(outDir, { recursive: true });
       const credsOut = path.join(outDir, `sts-${Date.now()}.json`);
+      // AK/SK 来源优先级：进程环境变量 > 配置面板（cfgHwAk/cfgHwSk）。gen_sts.py 靠这
+      // 两个变量走 aksk_cli_args（hcloud 通道）或 SDK 回退（IAM 子用户），设置里存了
+      // 就必须注进子进程 env——GUI 从 Explorer 启动时系统级变量未必有。
+      const saved = await readSettings(root);
+      const childEnv = {};
+      const effAk = process.env.HUAWEICLOUD_SDK_AK || saved.cfgHwAk || '';
+      const effSk = process.env.HUAWEICLOUD_SDK_SK || saved.cfgHwSk || '';
+      if (effAk) childEnv.HUAWEICLOUD_SDK_AK = effAk;
+      if (effSk) childEnv.HUAWEICLOUD_SDK_SK = effSk;
       try {
-        run(resolvePython(), [genScript, '--account', input.accountId, '--hcloud', hcloudPath, '--creds-out', credsOut], { timeout: 60_000 });
+        run(resolvePython(), [genScript, '--account', input.accountId, '--hcloud', hcloudPath, '--creds-out', credsOut], { timeout: 60_000, env: childEnv });
         return json(res, 200, { ok: true, credsPath: credsOut });
       } catch (e) {
         return json(res, 400, { error: `STS 生成失败: ${e.message}` });

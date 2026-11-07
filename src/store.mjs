@@ -78,9 +78,11 @@ export async function writeSettings(settings) {
 // cfgGitToken 是凭证，导出时默认不含（要含必须显式要求），导入时按文件内容如实应用。
 export const CONFIG_KEYS = [
   'cfgRepoName', 'cfgGitToken', 'cfgAuthorName', 'cfgAuthorEmail', 'cfgAccountId', 'cfgCredsPath',
+  'cfgHwAk', 'cfgHwSk',
   'cfgProblemNumber', 'cfgProblemName', 'cfgKeepPaths', 'cfgLocalSourcesDir', 'cfgExecuteSubmit', 'runsRoot',
 ];
-export const SECRET_CONFIG_KEYS = ['cfgGitToken'];
+// cfgHwSk 与 cfgGitToken 同级：导出配置默认排除，显式要求才带上。
+export const SECRET_CONFIG_KEYS = ['cfgGitToken', 'cfgHwSk'];
 
 // 导出文件落在设置文件旁边（默认 ~/.contest-publisher/），导出后会打开这个目录。
 export function configDir() {
