@@ -2,7 +2,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { cp, mkdir, readdir, rename, stat } from 'node:fs/promises';
 import { ensureDir, ensureLocalSourcesDir, exists, inside, removeEmptyOrMissing, runId, writeJson } from './store.mjs';
-import { run, runGit } from './process.mjs';
+import { run, runAsync, runGit, runGitAsync } from './process.mjs';
 import { logInfo } from './logger.mjs';
 
 export function validateSourceUrl(value) {
@@ -73,7 +73,7 @@ export async function acquireLocalSource({ entryName, sourcesDir, runsRoot }) {
     if (isZip) {
       const staging = path.join(root, '.extract');
       await ensureDir(staging);
-      extractZip(entry, staging);
+      await extractZipAsync(entry, staging);
       // GitHub 的 zip 只有一层顶层目录时展平，让 source/ 直接是项目根。
       const top = (await readdir(staging)).filter(item => item !== '__MACOSX');
       const flattened = top.length === 1 && (await stat(path.join(staging, top[0]))).isDirectory();
@@ -145,10 +145,11 @@ function psQuote(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
 }
 
-function extractZip(zipFile, dest) {
+// 异步版：解压大 zip（尤其杀软实时扫描开着时）可能卡数十秒，auto-run 链路里走异步。
+async function extractZipAsync(zipFile, dest) {
   const failures = [];
   for (const { command, args } of zipExtractCommands(zipFile, dest)) {
-    try { run(command, args, { timeout: 300_000 }); return; }
+    try { await runAsync(command, args, { timeout: 300_000 }); return; }
     catch (error) { failures.push(error.message); }
   }
   throw new Error(`无法解压 ${path.basename(zipFile)}：${failures.join(' | ')}`);
@@ -166,7 +167,8 @@ export async function acquireSource({ sourceUrl, ref = 'HEAD', runsRoot }) {
   await ensureDir(root);
   const source = path.join(root, 'source');
   try {
-    runGit(['clone', '--no-recurse-submodules', '--no-tags', '--', safeUrl, source], { timeout: 300_000 });
+    // clone 可跑几分钟，异步跑：事件循环冻死会被窗口看门狗误杀。
+    await runGitAsync(['clone', '--no-recurse-submodules', '--no-tags', '--', safeUrl, source], { timeout: 300_000 });
     const commit = runGit(['-C', source, 'rev-parse', '--verify', `${ref}^{commit}`]).trim();
     runGit(['-C', source, 'checkout', '--detach', commit]);
     const sourceMeta = {

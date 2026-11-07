@@ -16,11 +16,11 @@ test('rejects credential-bearing target remotes', () => {
 // "could not read Username for 'https://gitcode.com': Device not configured"——因为令牌
 // 只进 REST API，而推送走 git 自己的凭证通道。令牌必须现场交给 git，且不能出现在
 // 命令行里（异常信息会原样带上整条命令）。
-test('push hands the token to git through a one-shot helper, never the command line', () => {
+test('push hands the token to git through a one-shot helper, never the command line', async () => {
   const remote = 'https://gitcode.com/coastt/trip-planner.git';
   const token = 'tok-test-abcdefghijklmnop';
   // execute:false 只生成计划，不读工作目录，所以给一个不存在的目录也安全。
-  const dry = pushPreparedRepo(path.join(os.tmpdir(), 'contest-git-absent'), { remote, execute: false, token });
+  const dry = await pushPreparedRepo(path.join(os.tmpdir(), 'contest-git-absent'), { remote, execute: false, token });
   assert.equal(dry.dryRun, true);
   assert.equal(dry.credential, 'token');
   assert.equal(dry.command.includes(token), false, '命令行里不能出现令牌');
@@ -38,7 +38,7 @@ test('push hands the token to git through a one-shot helper, never the command l
   assert.match(out, new RegExp(`^password=${token}$`, 'm'));
 
   // 没给令牌时就保持原样：交给系统凭证，不引入任何额外参数。
-  const plain = pushPreparedRepo(path.join(os.tmpdir(), 'contest-git-absent'), { remote, execute: false });
+  const plain = await pushPreparedRepo(path.join(os.tmpdir(), 'contest-git-absent'), { remote, execute: false });
   assert.equal(plain.credential, undefined);
   assert.equal(plain.command.includes('credential'), false);
 });
@@ -87,7 +87,7 @@ test('re-publishing onto a remote that already has history replays the work copy
     runGit(['-C', second, 'add', '-A']);
     runGit(['-C', second, '-c', 'user.name=F', '-c', 'user.email=f@example.invalid', 'commit', '-qm', 'Initialize prepared contest project']);
 
-    const sync = reconcileRemoteHistory(second, remote, 'main', { authorName: 'Contest Author', authorEmail: 'author@example.invalid' });
+    const sync = await reconcileRemoteHistory(second, remote, 'main', { authorName: 'Contest Author', authorEmail: 'author@example.invalid' });
     assert.equal(sync.replay, true, 'diverged history is replayed, not rejected');
     runGit(['-C', second, 'push', '-q', '--set-upstream', remote, 'HEAD:main']);
 

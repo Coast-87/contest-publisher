@@ -541,7 +541,7 @@ export async function handleApiRequest(req, res, target) {
           await requireVerification(runDir, '上传前验证未通过', { allowGit: true });
           // 推送走 git 自己的凭证通道，与建仓用的 REST API 不共享，令牌得显式交给它。
           const token = input.token || process.env.GITCODE_ACCESS_TOKEN || (await readSettings(root)).cfgGitToken;
-          const result = pushPreparedRepo(path.join(runDir, 'work'), { remote: input.remote, branch: input.branch || 'main', execute: input.execute !== false, authorName: input.authorName, authorEmail: input.authorEmail, token });
+          const result = await pushPreparedRepo(path.join(runDir, 'work'), { remote: input.remote, branch: input.branch || 'main', execute: input.execute !== false, authorName: input.authorName, authorEmail: input.authorEmail, token });
           if (!result.dryRun) await writeJson(path.join(evidence, 'push.json'), result);
           return json(res, 200, result);
         }
@@ -685,7 +685,7 @@ export async function handleApiRequest(req, res, target) {
           // 4. push
           running('push');
           try {
-            const pushResult = pushPreparedRepo(workDir, { remote: repoRecord.cloneUrl, branch: 'main', execute: true, authorName: cfg.authorName, authorEmail: cfg.authorEmail, token });
+            const pushResult = await pushPreparedRepo(workDir, { remote: repoRecord.cloneUrl, branch: 'main', execute: true, authorName: cfg.authorName, authorEmail: cfg.authorEmail, token });
             await writeJson(path.join(evidence, 'push.json'), pushResult);
             step('push', 'done', `代码已推送 ${pushResult.branch || 'main'}`);
           } catch (e) { step('push', 'error', e.message); return respond({ ok: false, stage: 'push', log, error: e.message }); }

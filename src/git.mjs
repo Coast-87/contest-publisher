@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { exists } from './store.mjs';
-import { runGit } from './process.mjs';
+import { runGit, runGitAsync } from './process.mjs';
 import { logInfo, logWarn } from './logger.mjs';
 
 export function validateCloneUrl(value) {
@@ -74,7 +74,7 @@ export function initPreparedRepo(workDir, { remote, authorName, authorEmail, mes
   return result;
 }
 
-export function pushPreparedRepo(workDir, { remote, branch = 'main', execute = false, authorName, authorEmail, token, username } = {}) {
+export async function pushPreparedRepo(workDir, { remote, branch = 'main', execute = false, authorName, authorEmail, token, username } = {}) {
   const safeRemote = validateCloneUrl(remote ?? runGit(['-C', workDir, 'remote', 'get-url', 'origin']).trim());
   if (!/^[A-Za-z0-9._/-]+$/.test(branch) || branch.startsWith('-')) throw new Error('Invalid branch name');
   const auth = gitPushCredentialArgs(safeRemote, { token, username });
@@ -84,9 +84,10 @@ export function pushPreparedRepo(workDir, { remote, branch = 'main', execute = f
     return { dryRun: true, remote: safeRemote, branch, command: `git ${argv.join(' ')}`, ...(auth ? { credential: 'token' } : {}) };
   }
   logInfo('git', `开始真实推送: ${safeRemote} ${branch}`);
-  const sync = reconcileRemoteHistory(workDir, safeRemote, branch, { authorName, authorEmail, auth });
+  const sync = await reconcileRemoteHistory(workDir, safeRemote, branch, { authorName, authorEmail, auth });
   try {
-    runGit(['-C', workDir, ...argv], { timeout: 300_000, secure: false, env: auth?.env });
+    // fetch/push 都可能跑几十秒（网络慢时更久），必须异步，事件循环冻住会被窗口看门狗误杀。
+    await runGitAsync(['-C', workDir, ...argv], { timeout: 300_000, secure: false, env: auth?.env });
   } catch (error) {
     // 令牌只从环境变量读，正常不会出现在 git 的输出里；万一出现也不能带进日志和证据文件。
     logWarn('git', `推送被拒绝: ${safeRemote} ${branch}`);
@@ -101,9 +102,9 @@ export function pushPreparedRepo(workDir, { remote, branch = 'main', execute = f
 // 先把远端历史取回：远端是本地祖先 → 直接推；两端分叉或本地落后 → 以远端为基线，
 // 把本次工作副本整体记成一个新提交（保留远端历史，HEAD 与工作副本一致）。
 // fetch 与 push 同样要过认证，凭证参数整组透传；后面几步是本地操作，用不上。
-export function reconcileRemoteHistory(workDir, remote, branch, { authorName, authorEmail, auth } = {}) {
+export async function reconcileRemoteHistory(workDir, remote, branch, { authorName, authorEmail, auth } = {}) {
   try {
-    runGit(['-C', workDir, ...(auth?.args ?? []), 'fetch', '--quiet', remote, branch], { timeout: 300_000, secure: false, env: auth?.env });
+    await runGitAsync(['-C', workDir, ...(auth?.args ?? []), 'fetch', '--quiet', remote, branch], { timeout: 300_000, secure: false, env: auth?.env });
   } catch {
     return null; // 空仓库或分支不存在 → 直接推送
   }

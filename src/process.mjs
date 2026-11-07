@@ -86,6 +86,18 @@ export function runNodeAsync(script, args = [], options = {}) {
   return runAsync(command, [script, ...args], { ...options, env: { ...(options.env ?? {}), ...env } });
 }
 
+// runGit 的异步版：clone/fetch/push 这类可跑几十秒到几分钟的操作必须走它，
+// 否则 spawnSync 会把事件循环冻死（看门狗误杀窗口）。
+export function runGitAsync(args, options = {}) {
+  const secureEnv = options.secure === false ? (options.env ?? {}) : {
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: emptyGitConfig(),
+    GIT_LFS_SKIP_SMUDGE: '1',
+    ...(options.env ?? {}),
+  };
+  return runAsync('git', ['-c', `core.hooksPath=${gitHooksPath()}`, '-c', 'core.autocrlf=false', ...args], { ...options, env: secureEnv });
+}
+
 export function runGit(args, options = {}) {  const secureEnv = options.secure === false ? (options.env ?? {}) : {
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: emptyGitConfig(),
@@ -138,3 +150,15 @@ export function checkJsSyntax(file, code) {
 }
 
 export function resetScriptRuntimeCache() { runtimeCache = undefined; }
+
+// checkJsSyntax 的异步版：verify 对每个 JS 文件拉起一次运行时做 --check，
+// 慢盘+杀软环境下单次 5-15 秒（Lenovo 实测），spawnSync 连续两三个就能把
+// 事件循环冻到超过看门狗阈值——auto-push 链路里必须走异步。
+export async function checkJsSyntaxAsync(file, code) {
+  const { command, env } = resolveScriptRuntime();
+  if (env.BUN_BE_BUN) {
+    new Bun.Transpiler({ loader: 'js' }).transformSync(code ?? readFileSync(file, 'utf8'));
+    return;
+  }
+  await runAsync(command, ['--check', file], { timeout: 30_000 });
+}

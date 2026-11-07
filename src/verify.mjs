@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { classifyPath, isKeptPath, normalizeKeepPaths, scanText } from './policy.mjs';
 import { exists, readJson } from './store.mjs';
-import { checkJsSyntax } from './process.mjs';
+import { checkJsSyntaxAsync } from './process.mjs';
 import { logInfo, logWarn } from './logger.mjs';
 
 const GENERATED_FILES = new Set(['README.md', 'UPSTREAM.md', 'CONTRIBUTIONS.md', '.contest-publisher-manifest.json']);
@@ -87,7 +87,7 @@ export async function verifyPrepared(workDir, { runChecks = true, allowGit = fal
       }
     }
     if (runChecks && !kept && /\.(?:mjs|cjs|js)$/i.test(relative)) {
-      checkJsSyntax(file, text);
+      await checkJsSyntaxAsync(file, text);
       syntaxChecked.push(relative);
     }
     if (runChecks && /\.json$/i.test(relative) && !parseJsonLoose(text)) {
