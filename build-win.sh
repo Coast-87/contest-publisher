@@ -73,6 +73,10 @@ else
   echo "  警告：未找到 huawei-cloud-publish-ict-work，ICT 提交步骤将不可用"
 fi
 
+# 一键环境安装入口随包分发（双击 setup → 清 MOTW / 装 hcloud / 装 SDK / 写 AK-SK）
+cp setup-contest-publisher.ps1 "$STAGE/" 2>/dev/null || echo "  警告：setup-contest-publisher.ps1 不在仓库根"
+cp "一键安装环境.cmd" "$STAGE/" 2>/dev/null || echo "  警告：一键安装环境.cmd 不在仓库根"
+
 echo "==> [5/6] 写使用说明"
 # 文件名用 ASCII：Info-ZIP / ditto 都不给非 ASCII 名字打 UTF-8 标志位，
 # 中文文件名在 Windows 自带解压器里会变成乱码。内容仍是中文，记事本用 CRLF。

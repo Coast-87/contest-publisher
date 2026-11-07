@@ -19,3 +19,4 @@ desktop.ini
 *.swp
 __pycache__/
 *.pyc
+native/windows/*.exe
