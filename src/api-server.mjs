@@ -157,6 +157,13 @@ export async function handleApiRequest(req, res, target) {
         } catch { return json(res, 404, { error: 'Not found' }); }
       }
       if (req.method === 'GET' && pathname === '/api/runs') return json(res, 200, await listRuns(root));
+      // 全局赛题列表：赛题与具体 run 无关。此前只有 run 作用域的 /api/runs/<id>/problems，
+      // 没选中 run 时 runRef() 为空，/api/runs//problems 的空段被 routeId 吃掉，
+      // 'problems' 被当成 run id → statusRun 报「Run does not exist: <root>\problems」。
+      if (req.method === 'GET' && pathname === '/api/problems') {
+        const skillDir = query(req, 'skillDir') || BUNDLED_SKILL_DIR;
+        return json(res, 200, await listCompetitionProblems({ skillDir, creds: query(req, 'creds') }));
+      }
       if (req.method === 'GET' && pathname.startsWith('/api/runs/')) {
         const parts = routeId(pathname, '/api/runs/'); const runDir = assertRunId(parts[0], root);
         if (parts[1] === 'audit') return json(res, 200, await readJson(path.join(runDir, 'evidence', 'audit.json')));

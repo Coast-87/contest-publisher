@@ -250,6 +250,16 @@ test('problems endpoint lists competition problems so the target is visible befo
       { number: 1, name: '测试赛题甲', window: '2026-09-17~2026-11-08', status: 'published' },
       { number: 2, name: '带 空格 的赛题名', window: null, status: null },
     ]);
+
+    // 全局路由：赛题列表与当前 run 无关。没选中 run 时旧前端拼出 /api/runs//problems，
+    // 空段被 routeId 吃掉后 'problems' 被当成 run id，报「Run does not exist: …\problems」。
+    const globalMissing = await fetch(`${url}/api/problems`);
+    assert.equal(globalMissing.status, 400);
+    assert.match((await globalMissing.json()).error, /STS 凭证/);
+
+    const globalRes = await fetch(`${url}/api/problems?creds=${encodeURIComponent('/tmp/fake-creds.json')}&skillDir=${encodeURIComponent(skillDir)}`);
+    assert.equal(globalRes.status, 200);
+    assert.deepEqual((await globalRes.json()).items, body.items);
   });
 });
 

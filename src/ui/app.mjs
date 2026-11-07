@@ -788,7 +788,10 @@ function renderTargetHint(){
 async function fetchProblems(){
   const cfg=getCfg();
   if(!cfg.credsPath){toast('请先在 ⚙ 配置 填 STS 凭证路径，或点「生成」自动生成',true);$('settingsModal').classList.add('open');return null}
-  return await api(\`/api/runs/\${encodeURIComponent(runRef())}/problems?creds=\${encodeURIComponent(cfg.credsPath)}\`);
+  // 全局路由：赛题列表与当前 run 无关，没选中 run 时也必须能用
+  //（旧写法 /api/runs/<runRef>/problems 在无 run 时退化成 /api/runs//problems，
+  // 'problems' 被当成 run id，报「Run does not exist: …\problems」）。
+  return await api(\`/api/problems?creds=\${encodeURIComponent(cfg.credsPath)}\`);
 }
 function renderProblems(items){
   const cfg=getCfg();
