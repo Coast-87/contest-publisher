@@ -4,8 +4,11 @@
 #
 # 背景: Git Bash（MSYS2）会自动把以 / 开头的参数按 POSIX 路径转成 Windows 路径
 #   （如 /v1/gallery/... → C:/Program Files/Git/v1/gallery/...，path 含空格触发 undici
-#   "unescaped characters" 校验失败）。对 api.mjs / check-version.mjs 等一切带 / 前缀参数的脚本均适用。
+#   "unescaped characters" 校验失败）。对 api.mjs 等一切带 / 前缀参数的脚本均适用；
+#   api.mjs 漏 source 时会自检并 exit 2（提示含本文件绝对路径），不必靠人工判断。
 #   本文件在 MSYS 环境且未设 MSYS_NO_PATHCONV 时置 1，PowerShell/CMD 无需。
+# 副作用: MSYS_NO_PATHCONV=1 对该 shell 内所有参数生效——此后本地路径（--file、脚本自身路径等）
+#   一律写 Windows 形式（C:/...）；POSIX 形式（/c/...、/tmp/...）会被当成本盘符根路径而解析失败。
 # 参考: 同级 huawei-cloud-publish-work-to-gallery/scripts/setup-env.sh（同款机制，两处独立）
 
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ "${BASH_SOURCE[0]}" = "$0" ]; then

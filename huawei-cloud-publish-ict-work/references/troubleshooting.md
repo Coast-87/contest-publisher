@@ -6,6 +6,7 @@
 
 - [Network Connectivity Issues](#network-connectivity-issues)
 - [Git Bash / MSYS Path Conversion (Windows)](#git-bash--msys-path-conversion-windows)
+- [GitCode Repository Setup Failures](#gitcode-repository-setup-failures)
 - [Git Not Installed (Windows)](#git-not-installed-windows)
 - [No Usable Python](#no-usable-python)
 - [Domain ID Resolution Issues](#domain-id-resolution-issues)
@@ -26,7 +27,7 @@ API requests to `https://gallery.developer.huaweicloud.com` time out or return c
 
 **Diagnosis:**
 
-连通性检查命令（`/open-api-guest/v1/gallery/announcements/current`，无需 STS 凭证）见 [SKILL.md — 脚本契约速查](../SKILL.md#脚本契约速查)，直接照跑即可；超时或连接错误即判定平台不可达。（注：收到任何 HTTP 响应即说明平台可达；`announcement` 为 `null` 仅代表当前无生效公告，连通性正常。）
+连通性检查命令（`/open-api-guest/v1/gallery/announcements/current`，无需 STS 凭证）见 [SKILL.md — 脚本契约速查](../SKILL.md#脚本契约速查)，直接照跑即可；超时或连接错误即判定平台不可达。（注：收到任何 HTTP 响应即说明平台可达；`data.announcements` 为空列表仅代表当前无生效公告，连通性正常。）
 
 技能版本检查（`node $SKILL_DIR/scripts/check-version.mjs`，读取自身 `name`/`version` 调 `open-api-guest GET /v1/gallery/skills/status`，无需凭证）为**平台统一判定**：已登记在 `SKILLS_VERSION` 的技能，本地 `version` 缺失/无法解析或落后于登记版本 → `status=outdated`（提示升级并停止）；本地版本 ≥ 登记版本 → `status=pass`；未登记技能 → `status=skip`。平台不可达/响应异常时脚本按 `status=skip` 处理（尽力而为，不阻塞）。升级文案由平台按当前技能名渲染（`${skillName}`/`${skillInstallCommand}` 占位符替换）后随 outdated 响应下发。
 
@@ -68,19 +69,62 @@ Certificate errors occur when accessing the platform via HTTPS.
 ## Git Bash / MSYS Path Conversion (Windows)
 
 ### Problem:
-在 **Git Bash（MSYS2）** 下直接调用 `node api.mjs GET /v1/...` 等命令时，`/v1/...` 开头的参数被 MSYS 自动转换成 Windows 路径（如 `C:/Program Files/Git/v1/...`），导致 `api.mjs` 报 `unescaped chars` 或 404。
+在 **Git Bash（MSYS2）** 下直接调用 `node $SKILL_DIR/scripts/api.mjs GET /v1/...` 等命令时，`/v1/...` 开头的参数被 MSYS 在 Node 进程启动前自动转换成 Windows 路径（`/v1/...` → `C:/Program Files/Git/v1/...`，转换发生在 argv 阶段、脚本无法还原），旧版 api.mjs 报 `Request path contains unescaped characters` 或 404。
+
+**新版 api.mjs（2026-11 起）自带检测**：只要 `<path>` 不是单个 `/` 开头的绝对路径就 exit 2，盘符形态还会附上本 Skill `setup-env.sh` 的绝对路径——照抄提示里的命令即可，无需自行判断。
 
 ### Solution:
 任选其一：
 
-1. **前缀禁用转换（推荐）**：
+1. **禁用转换（推荐，二选一）**：
    ```bash
+   source "$SKILL_DIR/scripts/setup-env.sh"   # 本会话生效（等价 export MSYS_NO_PATHCONV=1）
+   # 或单条命令前缀式
    MSYS_NO_PATHCONV=1 node $SKILL_DIR/scripts/api.mjs GET /v1/gallery/announcements/current --prefix open-api-guest
    ```
-2. **用 `//` 双斜杠转义**：`api.mjs GET //v1/gallery/announcements/current --prefix open-api-guest`（MSYS 将 `//` 视为第一个 `/` 后的文字，还原为 `/v1/...`）。
-3. **改用 PowerShell/CMD 执行**：`powershell -Command "node $SKILL_DIR/scripts/api.mjs GET /v1/... --prefix open-api-guest"`，无 MSYS 转换。
+2. **改用 PowerShell/CMD 执行**：`powershell -Command "node $SKILL_DIR/scripts/api.mjs GET /v1/... --prefix open-api-guest"`，无 MSYS 转换。
+
+> ⚠️ **不要用 `//v1/...` 双斜杠绕过**（旧版本文档给过此办法，实测无效）：MSYS 对 `//` 前缀不做转换，node 收到的是 `//v1/...`，api.mjs 会拼出 `/open-api-public//v1/...`；新版已把这种写法按契约错误拦下（exit 2，提示去掉一个 `/`）。
+> ⚠️ **禁用转换后本地路径必须写 Windows 形式**：如 `--file "image=@C:/path/x.png"`。POSIX 形式（`/c/...`、`/tmp/...`）不再被转换，会被当成本盘符根路径解析失败（`ENOENT` / `MODULE_NOT_FOUND`，脚本自身路径同理）。
 
 > 同理适用于任何以 `/` 开头的路径参数（`api.mjs`、`gen_sts.py`、`build-cover.mjs --url` 等）。判断信号：stderr/响应中出现 `C:\Program Files\Git\` 前缀或 URL 中 `Program Files` 字样，即命中此问题。
+
+---
+
+## GitCode Repository Setup Failures
+
+### 1. 未登录 / 登录态失效（`gitcode-repos.mjs --list` 失败）
+
+**Problem:** `node $SKILL_DIR/scripts/gitcode-repos.mjs --list` 报 `未登录 GitCode`（exit 1），或 API 返回 `401/403`。
+
+**Solution:**
+- **脚本自己调 API，不要绕道 CLI**：`gitcode-repos.mjs` 直接用 `Authorization: Bearer` 请求 GitCode OpenAPI（base 默认 `https://api.gitcode.com/api/v5`，可用 `GITCODE_API_URL` 覆盖；超时 10s），token 取 `$GITCODE_TOKEN`（PAT）或 `${GITCODE_HOME:-~/.gitcode}/auth.toml` 的 `access_token`。
+  ⚠️ **禁止**改用 `gitcode-oauth get /user/repos` 之类的 CLI 透传：旧版 CLI **只有授权能力**（没有 `get` 子命令，报"版本不匹配"），依赖它必然失败；授权本身仍走 `gitcode-oauth.ensure.mjs`（`serve` + 登录闭环在旧版 CLI 同样可用）。
+- **未登录**：先 `ensure-gitcode-credential.mjs` 复核。无凭证时用 `gitcode-oauth.ensure.mjs --login`，**以后台任务方式运行**（前台阻塞会被工具超时连坐杀掉回调 serve）：先拿 `#oauth=started session_id=<id> login_url=<url>` 给用户（二维码 best-effort，异常就直接给链接），再从同一任务读到 `#oauth=done`。完成后重跑 `--list`。
+- **登录被中断 / token 没落盘（Windows 高发）**：工具超时或中断会按**进程树连坐**杀掉后台 serve（`detached: true` 也挡不住），授权回调无人接收 → token 不落盘。**恢复顺序**：
+  1. **先查 token 是否已落盘**：`ensure-gitcode-credential.mjs`（`#credential=found`）或 `ensure.mjs --start`（`#oauth=ready`）。**已落盘就不要重复登录**，直接继续发布流程。
+  2. 未落盘 → 重跑 `--wait <session_id>` **续上**（超时/异常/`Ctrl+C` 都不再杀 serve，session 仍有效）。**不要**重新 `--start`/`--login`：那会换掉 session 与链接，用户得重新授权。
+  3. 只有 `#oauth=failed reason=serve-dead`（serve 已被连坐带走，连续 5 次探测不可达，约 10s 内快速失败）才重新 `--login`，让用户重新授权。
+  4. 放弃登录时 `gitcode-oauth.ensure.mjs --stop` 清理后台 serve（幂等，`#oauth=stopped killed=<pid|none>`）。
+- **API 401/403**：token 过期/失效（脚本不自行刷新，刷新与重登由登录闭环负责）→ 重跑登录闭环后重试；无 OAuth 条件时用 `GITCODE_TOKEN`（PAT）兜底，**不要**向用户索要账号密码。
+- **HTTP 404**：接口/基址不对 → 检查 `GITCODE_API_URL` 是否指向 `…/api/v5`（不要带尾部路径）。
+- **HTTP 429**：触发频率限制 → 稍后重试，不要连打。
+- ⚠️ `--list` 失败（exit 1 + stderr）**不等于**"用户没有仓库"：无仓库是 exit 0 + `#count=0`。不要用失败去推断"只能新建"。
+
+### 2. 建仓失败（`gitcode-repos.mjs --create`）
+
+| API | 含义 | 处置 |
+|---|---|---|
+| 409 | 仓库名/路径已占用 | `gitcode-repos.mjs --list --query <name>` 看命中是否就是用户已有仓库 → 请用户选「改用已有仓库」或换一个名字；**不要**擅自改名重试 |
+| 422 | 名字/路径不被接受（中文、超长、非法字符） | 换成字母数字与 `. _ -` 的组合（GitCode 仓库路径不支持中文）后重试 |
+| 401/403 | 登录态失效 | 重跑两阶段 OAuth |
+| 其他 / 响应非 JSON | 接口变更或服务端异常 | 原样转述 `API (<code>): <body>`；降级为「用户自行建空仓并提供仓库地址」，并说明降级原因 |
+
+### 3. 推送认证失败（`git push -u origin <branch>`）
+
+- `Authentication failed` / `403`：回 Step 3 第 1 步重跑 `ensure-gitcode-credential.mjs`。`#credential=found` 仍推不动 → 该凭证对目标仓库**无写权限**（常见于组织/他人仓库）→ 让用户改选有写权限的仓库，或用 `--create` 新建。
+- **分支名不一致**（本地 `master`、远端默认 `main`）：按 `read-git-info.mjs` 的 stderr 唯一处置，**不要** `--force`。
+- **私有仓库**：平台/评审侧可能无法访问 → 默认建**公开**仓库；用户坚持私有需明确告知可能影响作品可访问性。
 
 ---
 

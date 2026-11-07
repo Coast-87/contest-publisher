@@ -4,7 +4,7 @@
 // 调 A1 POST /open-api-public/v1/gallery/competition/works（经本目录副本 api.mjs）：
 //   - multipart 表单：trainingCampId/problemId/workName/gitUrl/gitBranch（2026-09-17 简化：无封面/详情/envUrl）
 //   - Idempotency-Key 幂等（与服务端去重一致）
-//   - 身份：生产由 APIG 网关注入 X-Domain-Id（经 STS 凭证解析）；本地/网关后联调可用 domainId 参数经 --header 透传
+//   - 身份：由 APIG 网关注入 X-Domain-Id（本脚本不传身份头）
 //   - 凭证：accessKeyId/secretAccessKey/securityToken **必填**（Step 0 sts-creds.json）落盘为 creds 文件（不经 argv，
 //     规避超长 token 截断）；含 _refresh 元数据时启用 401 自动刷新（复用 api.mjs --auto-refresh）
 //   - 积分：A1 不领取成长积分（2026-09-17 白名单机制移除），201 响应无 reward 字段
@@ -37,7 +37,6 @@ const PARAMS_SCHEMA_HELP = `提交参数 JSON 仅识别以下 key（脚本直接
   "workName":        "<作品名称>                                   必填",
   "gitUrl":          "<git clone 地址，https:// 开头 .git 结尾>     必填",
   "gitBranch":       "<分支名>                                    必填",
-  "domainId":        "<调用方 domainId，透传 X-Domain-Id>           可选（仅本地/网关后联调）",
   "accessKeyId":     "<STS 临时凭证 AK，Step 0 落盘 sts-creds.json> 必填（生成本 skill 身份）",
   "secretAccessKey": "<STS 临时凭证 SK>                            必填",
   "securityToken":   "<STS Security Token>                        必填",
@@ -46,7 +45,7 @@ const PARAMS_SCHEMA_HELP = `提交参数 JSON 仅识别以下 key（脚本直接
 
 const VALID_PARAM_KEYS = new Set([
   "idempotencyKey", "problemId", "trainingCampId", "workName",
-  "gitUrl", "gitBranch", "domainId",
+  "gitUrl", "gitBranch",
   "accessKeyId", "secretAccessKey", "securityToken", "_refresh",
 ]);
 
@@ -72,7 +71,7 @@ const p = JSON.parse(paramsRaw);
 const {
   idempotencyKey, problemId, trainingCampId, workName,
   gitUrl, gitBranch,
-  domainId, accessKeyId, secretAccessKey, securityToken, _refresh,
+  accessKeyId, secretAccessKey, securityToken, _refresh,
 } = p;
 
 const unknownKeys = Object.keys(p).filter((k) => !VALID_PARAM_KEYS.has(k));
@@ -103,8 +102,6 @@ const args = [cli.api, "POST", "/v1/gallery/competition/works",
   "--form", `workName=${workName}`,
   "--form", `gitUrl=${gitUrl}`,
   "--form", `gitBranch=${gitBranch}`];
-
-if (domainId) args.push("--header", `X-Domain-Id: ${domainId}`);
 
 // 凭证落盘 → api.mjs --creds-file（不经 argv）; 含 _refresh 时启用 401 自动刷新
 let credsFile = "";

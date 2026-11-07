@@ -10,8 +10,10 @@
 //      agent 拿不到链接也无从提示用户，看起来像卡死。现拆为两阶段：
 //
 //   阶段 1 `--start`（无参默认）：有 token → `#oauth=ready`；无 token → 起 serve + 创建会话，
-//      打印 `#oauth=started session_id=<id> login_url=<url>`（stdout）+ 二维码（stderr）后**立即退出**。
-//     agent 拿到链接后原样展示给用户（禁止 agent 内置浏览器代开）。
+//      打印 `#oauth=started session_id=<id> login_url=<url>`（stdout）后**立即退出**。
+//     agent 把链接和二维码一并给用户：二维码为 best-effort（serve 返回纯 Unicode 块字符 █▀▄，
+//     净化+等宽化后请放入等宽代码块展示，勿让 Markdown 折叠空格）；展示异常（乱码/断行/缩进塌陷）
+//     直接给 login_url，链接始终为主路径（禁止 agent 内置浏览器代开）。
 //   阶段 2 `--wait <session_id>`：轮询同一 serve（127.0.0.1:7654）至授权完成 → finish → 写 token →
 //      `#oauth=done`；超时/失败 → `#oauth=failed reason=...`。
 //
@@ -52,31 +54,40 @@ let waitTimeoutMs = POLL_TIMEOUT_MS;
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === "-h" || a === "--help") {
-    console.log(`gitcode-oauth.ensure.mjs — GitCode OAuth 登录闭环（两阶段，非阻塞）
+    console.log(`gitcode-oauth.ensure.mjs — GitCode OAuth 登录闭环（默认两阶段；也可一条命令跑完）
 
 用法:
-  阶段 1（起 serve + 拿链接，立即返回）:
-    node gitcode-oauth.ensure.mjs --start
-    # 有 token  → #oauth=ready        exit 0
-    # 无 token  → #oauth=started session_id=<id> login_url=<url>   exit 0（serve 后台存活）
-    #             二维码走 stderr；把链接原样展示给用户，禁止 agent 内置浏览器代开
-  阶段 2（等用户授权完，轮询收尾）:
-    node gitcode-oauth.ensure.mjs --wait <session_id> [--timeout <秒>]
-    # 成功 → #oauth=done         exit 0（token 已写 ~/.gitcode/auth.toml）
-    # 失败 → #oauth=failed reason=...  exit 1
+  A. 推荐（一条命令跑完；建议以后台任务运行，避免 --wait 被工具中断带走 serve）:
+     node gitcode-oauth.ensure.mjs --login [--timeout <秒>]
+     # 先打印 #oauth=started session_id=<id> login_url=<url>（可流式读取），二维码走 stderr（best-effort）
+     # 把链接/二维码交给用户后，本进程继续轮询 → 成功 #oauth=done（token 已写 ~/.gitcode/auth.toml）
+  B. 两阶段（旧流程，仍兼容）:
+     node gitcode-oauth.ensure.mjs --start              # 起 serve + 拿链接后立即返回（serve 后台存活）
+     node gitcode-oauth.ensure.mjs --wait <session_id> [--timeout <秒>]
+  C. 清理:
+     node gitcode-oauth.ensure.mjs --stop               # 结束后台 serve（放弃登录时用）
 
 选项:
-  --start              阶段 1（默认）
-  --wait <session_id>  阶段 2，轮询指定会话
-  --timeout <秒>       阶段 2 轮询时长（默认 300）
+  --login              起 serve + 打印链接 + 阻塞轮询至授权完成（推荐；适合后台运行）
+  --start              仅阶段 1（默认）
+  --wait <session_id>  仅阶段 2，轮询指定会话
+  --timeout <秒>       --login / --wait 的轮询时长（默认 300）
+  --stop               杀掉后台 serve 并清理 pid/日志（幂等）
   --quiet              静默（stdout 仅结果行）
   -h, --help           帮助
 
-环境变量: GITCODE_OAUTH_BIN（显式指定二进制路径）
-退出码: 0=ready/started/done; 1=absent/失败; 2=参数错误`);
+中断语义（重要）:
+  --login / --wait 超时、异常、Ctrl+C 都**不会**杀 serve——serve 保留在后台，用户完成授权后重跑
+  --wait <session_id> 即可续上（token 落盘前不要重新 --start，那会换掉 session/链接）。
+  只有两种情况会清理 serve：① #oauth=done 成功后；② 显式 --stop。
+
+环境变量: GITCODE_OAUTH_BIN（显式指定二进制路径）；GITCODE_HOME（auth.toml 目录）
+退出码: 0=ready/started/done/stopped; 1=absent/失败; 2=参数错误`);
     process.exit(0);
   } else if (a === "--quiet") quiet = true;
   else if (a === "--start") mode = "start";
+  else if (a === "--login") mode = "login";
+  else if (a === "--stop") mode = "stop";
   else if (a === "--wait") { mode = "wait"; waitSession = args[++i] || ""; }
   else if (a === "--timeout") { const n = Number(args[++i]); if (n > 0) waitTimeoutMs = n * 1000; }
   else { console.error(`❌ 未知参数: ${a}`); process.exit(2); }
@@ -84,6 +95,14 @@ for (let i = 0; i < args.length; i++) {
 
 const log = quiet ? () => {} : (m) => console.error(`[gitcode-oauth] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// 中断/终止**不杀 serve**：serve 是 detached 后台进程，只有保留它，用户授权后才能用 --wait 续上
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.on(sig, () => {
+    console.error(`\n⚠️ 收到 ${sig}：后台 serve 保留（pid=${pidFilePid() || "?"}），未完成的授权可重跑 --wait <session_id> 续上；放弃时跑 --stop 清理。`);
+    process.exit(130);
+  });
+}
 
 // ---- 工具 ----
 function findBinary() {
@@ -243,17 +262,62 @@ async function doStart(bin) {
   // stderr 的二维码/动画可能含 \r 刷新或 ANSI 清屏，把上面的状态行冲掉（tail/终端抓不到链接）。
   // 因此在 stdout 把关键信息单独再打一行，保证无论 stderr 怎么刷屏，登录链接一定可见。
   console.log(`login_url=${loginUrl}`);
-  console.error(`👇 请在浏览器打开以下链接，或扫码完成 GitCode 授权（脚本等待最多 300s）：`);
-  console.error(`   登录链接: ${loginUrl || "(无)"}`);
-  // ASCII 二维码（端子输出，供有终端的 agent 展示）
-  if (start.qr_code) console.error(`\n${start.qr_code}\n`);
-  console.error(`⚠️ 请把上面的链接和二维码一并原样展示给用户，由用户在任意浏览器打开链接或扫码授权；禁止用 agent 内置浏览器代开。`);
-  console.error(`   用户授权完成后，执行收尾轮询：`);
-  console.error(`   node <skill>/scripts/gitcode-oauth.ensure.mjs --wait ${sessionId}`);
+  printLoginPrompt({ loginUrl, qrCode: start.qr_code, sessionId, blocking: false });
   process.exit(0);
 }
 
-// ---- 阶段 2：--wait（轮询至授权完成 → finish → 写 token，结束清理 serve）----
+// 链接 / 二维码 / 纪律（--start 与 --login 共用）
+function printLoginPrompt({ loginUrl, qrCode, sessionId, blocking }) {
+  console.error(`👇 请在浏览器打开以下链接，或扫码完成 GitCode 授权（最多 ${Math.round(waitTimeoutMs / 1000)}s）：`);
+  console.error(`   登录链接: ${loginUrl || "(无)"}`);
+  // 二维码（best-effort）：serve 返回纯 Unicode 块字符（█ ▀ ▄ + 空格，无 ANSI、无飞行串）。
+  // 净化 + 等宽化后再输出，保证贴进等宽代码块即可对齐一维扫出；异常则降级纯链接。
+  const qrText = qrCode ? normalizeQrText(qrCode) : "";
+  if (qrText) {
+    console.error(`   二维码（请放入等宽代码块展示，勿让 Markdown 折叠空格）：`);
+    console.error(`\n${qrText}\n`);
+  } else {
+    console.error(`⚠️ 二维码文本缺失或不可用，直接用上面的登录链接即可。`);
+  }
+  console.error(`⚠️ 链接始终为主路径：二维码仅供便利，若渲染成乱码/断行/缩进塌陷，直接给链接由用户在浏览器打开授权；禁止用 agent 内置浏览器代开。`);
+  if (blocking) {
+    console.error(`   ⏳ 本进程会阻塞到授权完成或超时（建议以后台任务方式运行本命令，再从输出读取链接）。`);
+    console.error(`   超时/中断都不会杀掉后台 serve：重跑 --wait ${sessionId} 可续上；放弃时 --stop 清理。`);
+  } else {
+    console.error(`   用户授权完成后，执行收尾轮询：`);
+    console.error(`   node <skill>/scripts/gitcode-oauth.ensure.mjs --wait ${sessionId}`);
+  }
+}
+
+// ---- 阶段 1+2 合并：--login（一条命令跑完；适合后台运行）----
+async function doLogin(bin) {
+  if (!(await ensureServeUp(bin))) {
+    console.log("#oauth=failed reason=server");
+    console.error(`无法访问或启动 ${SERVER_URL} 的 gitcode-oauth serve。日志: ${SERVE_LOG_FILE}`);
+    process.exit(1);
+  }
+  let start;
+  try {
+    start = await loginStart();
+  } catch (e) {
+    console.log("#oauth=failed reason=start");
+    console.error(`login/start 失败: ${e && e.message}`);
+    process.exit(1);
+  }
+  const sessionId = start.session_id || "";
+  if (!sessionId) {
+    console.log("#oauth=failed reason=start");
+    console.error("login/start 响应缺 session_id");
+    process.exit(1);
+  }
+  const loginUrl = start.login_url || "";
+  console.log(`#oauth=started session_id=${sessionId} login_url=${loginUrl}`);
+  console.log(`login_url=${loginUrl}`);
+  printLoginPrompt({ loginUrl, qrCode: start.qr_code, sessionId, blocking: true });
+  await doWait(sessionId);
+}
+
+// ---- 阶段 2：--wait（轮询至授权完成 → finish → 写 token；失败/超时**不杀 serve**，便于续上）----
 async function doWait(sessionId) {
   if (!sessionId) {
     console.error("❌ --wait 需要 <session_id>（从 --start 输出拿）");
@@ -264,6 +328,7 @@ async function doWait(sessionId) {
   let lastBody = "";
   let pollCount = 0;
   let connErrs = 0;
+  let serveDead = false;
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`${SERVER_URL}/login/poll?session_id=${encodeURIComponent(sessionId)}`, { signal: AbortSignal.timeout(5000) });
@@ -292,6 +357,8 @@ async function doWait(sessionId) {
         log(`poll #${pollCount + 1} 请求失败: ${e?.message || e}`);
       }
       pollCount++;
+      // 本地 serve 连续 5 次（~10s）不可达 → 判定 serve 已死，立即失败并给恢复指引（不要死等 5 分钟）
+      if (connErrs >= 5) { serveDead = true; break; }
     }
     // 每 8 次（~15s）打一行，让 agent 知道仍在等待而非卡死
     if (!quiet && pollCount > 0 && pollCount % 8 === 0) {
@@ -301,9 +368,18 @@ async function doWait(sessionId) {
   }
 
   if (!authorized) {
-    stopServe();
-    console.log("#oauth=failed reason=timeout");
-    console.error(`等待授权超时（${pollCount} 次轮询，最后响应: ${lastBody.slice(0, 200) || "(无)"}）。请确认用户已点击授权链接，或重新执行 --start。`);
+    // 关键：超时 / serve 已死都**不清理 serve**（清了 session 就废了，用户授权完也收不到 token）
+    console.log(`#oauth=failed reason=${serveDead ? "serve-dead" : "timeout"}`);
+    if (serveDead) {
+      console.error(`后台 serve 已不可达（连续 ${connErrs} 次请求失败）——它所在的后台任务/终端多半被中断带走了（Windows 上工具中断会按进程树连坐）。
+  处置：① 先查 token 是否已落盘：node $SKILL_DIR/scripts/ensure-gitcode-credential.mjs（#credential=found 即已落盘，无需再登录）
+        ② 未落盘 → 重跑 --login（或 --start 重新拿链接；session_id 会变，需用户重新授权）
+        ③ 残留服务可跑 --stop 清理。`);
+    } else {
+      console.error(`等待授权超时（${pollCount} 次轮询，最后响应: ${lastBody.slice(0, 200) || "(无)"}）。
+  后台 serve 仍存活（pid=${pidFilePid() || "?"}）：用户完成授权后重跑 --wait ${sessionId} 即可续上（token 落盘前**不要**重新 --start，那会换掉 session）。
+  放弃登录可跑 --stop 清理。`);
+    }
     process.exit(1);
   }
 
@@ -313,16 +389,14 @@ async function doWait(sessionId) {
     const res = await fetch(`${SERVER_URL}/login/finish?session_id=${encodeURIComponent(sessionId)}`, { signal: AbortSignal.timeout(8000) });
     finish = await res.json();
   } catch (e) {
-    stopServe();
     console.log("#oauth=failed reason=finish");
-    console.error(`login/finish 失败: ${e && e.message}`);
+    console.error(`login/finish 失败: ${e && e.message}\n   serve 保留（pid=${pidFilePid() || "?"}）：可直接重跑 --wait ${sessionId} 续上；放弃时 --stop。`);
     process.exit(1);
   }
   const token = finish.access_token || "";
   if (!token) {
-    stopServe();
     console.log("#oauth=failed reason=token");
-    console.error("login/finish 响应缺 access_token");
+    console.error(`login/finish 响应缺 access_token。serve 保留：可重跑 --wait ${sessionId} 续上；放弃时 --stop。`);
     process.exit(1);
   }
 
@@ -379,8 +453,56 @@ function stopServe() {
   try { unlinkSync(SERVE_PID_FILE); } catch {}
 }
 
+// ---- --stop：显式结束后台 serve（幂等；pid 文件 + 端口占用双来源，防 pid 文件丢失）----
+function doStop() {
+  const pids = new Set();
+  const fromFile = pidFilePid();
+  if (fromFile) pids.add(fromFile);
+  for (const p of portPidsOn(7654)) if (p > 0) pids.add(p);
+  for (const pid of pids) forceKill(pid);
+  try { unlinkSync(SERVE_PID_FILE); } catch {}
+  console.log(`#oauth=stopped killed=${[...pids].join(",") || "none"}`);
+  if (pids.size === 0) console.error("ℹ️ 未发现运行中的 gitcode-oauth serve（无需清理）。");
+  process.exit(0);
+}
+
+// 二维码文本净化（best-effort）：
+//   ① 若含 ANSI/ESC 或 \r 刷新残留 → 放弃重建返回空串（无法可靠还原，降级纯链接）
+//   ② 只允许块字符 █ ▀ ▄ 与空格；其余可视字符视为损坏
+//   ③ 等宽化：每行补齐到最大行宽，避免通道剥尾随空格后行列失衡
+// 返回空串 = 文本不可扫，调用方应降级为纯链接展示。
+const QR_GLYPH = new Set(["█", "▀", "▄", " "]);
+function normalizeQrText(raw) {
+  const str = String(raw);
+  if (str.includes("\x1b") || str.includes("\r")) return "";
+  const lines = str
+    .replace(/\t/g, " ")
+    .replace(/[ \t]+$/gm, "")
+    .split(/\n+/);
+  while (lines.length && !lines[0]) lines.shift();
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  const height = lines.length;
+  if (height < 9) return "";
+  const width = Math.max(...lines.map((l) => [...l].length));
+  if (width < 9) return "";
+  const out = [];
+  for (const line of lines) {
+    const chars = [...line];
+    for (let x = 0; x < width; x++) {
+      const c = x < chars.length ? chars[x] : " ";
+      if (!QR_GLYPH.has(c)) return "";
+      out.push(c);
+    }
+    out.push("\n");
+  }
+  return out.join("");
+}
+
 // ---- 主入口 ----
 async function main() {
+  // --stop 与登录态无关（清理残留 serve），必须放在 token 检查之前
+  if (mode === "stop") doStop();
+
   // 已有 token（两阶段都先判）
   if (existsSync(AUTH_FILE)) {
     let rawClean = false;
@@ -406,14 +528,16 @@ async function main() {
 
   if (mode === "wait") {
     await doWait(waitSession);
+  } else if (mode === "login") {
+    await doLogin(bin);
   } else {
     await doStart(bin);
   }
 }
 
 main().catch((e) => {
-  stopServe();
+  // 异常也**不杀 serve**（用户可能刚好授权成功，保留才能用 --wait 收尾）
   console.log(`#oauth=failed reason=exception`);
-  console.error(`异常: ${e && e.message}`);
+  console.error(`异常: ${e && e.message}\n   后台 serve 保留（pid=${pidFilePid() || "?"}）：可重跑 --wait <session_id> 续上；放弃时跑 --stop 清理。`);
   process.exit(1);
 });

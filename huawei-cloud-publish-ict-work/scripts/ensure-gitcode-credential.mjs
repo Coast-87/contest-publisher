@@ -115,14 +115,16 @@ if (credSource) {
 // ---- 2. 无凭证 → 所有平台统一：仅 gitcode-oauth 扫码 / 点击链接授权登录 ----
 // gitcode-oauth.ensure.mjs 自带二进制自动安装（存在不下载），此处不再生成安装命令。
 // 登录闭环是两阶段（避免同步阻塞导致 agent 无法提示用户）：
-//   ① --start   起 serve + 拿链接/二维码，立即返回 → agent 把链接和二维码一并原样展示给用户
+//   ① --start   起 serve + 拿链接/净化后的文本二维码，立即返回
+//                → 用「等宽代码块」展示二维码，异常（乱码/断行/缩进塌陷）就直接给链接
 //   ② --wait    用户授权完，轮询收尾写 token
 console.log(`#credential=missing`);
 console.error(`GitCode 凭证未检测到。执行两阶段 OAuth 登录：
   ① 阶段1（起 serve + 拿链接，立即返回）:
      node <skill>/scripts/gitcode-oauth.ensure.mjs --start
-     # stdout: #oauth=started session_id=<id> login_url=<url>；二维码走 stderr。
-     # 把链接和二维码一并原样展示给用户，由用户在任意浏览器打开链接或扫码授权；禁止用 agent 内置浏览器代开。
+     # stdout: #oauth=started session_id=<id> login_url=<url>；二维码走 stderr（best-effort）。
+     # 二维码请放进等宽代码块展示（勿让 Markdown 折叠空格）；渲染异常（乱码/断行）→ 直接用链接。
+     # 链接始终为主路径；禁止用 agent 内置浏览器代开。
   ② 阶段2（用户授权完成后轮询收尾）:
      node <skill>/scripts/gitcode-oauth.ensure.mjs --wait <session_id>
      # 成功后 token 存 ~/.gitcode/auth.toml（stdout #oauth=done）。`);

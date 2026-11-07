@@ -28,6 +28,7 @@ import http from "node:http";
 import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 if (process.platform === "win32") {
@@ -194,6 +195,35 @@ function parseArgs(argv) {
     }
   }
   return o;
+}
+
+// ---- API 路径契约校验（fail-fast，避免坏路径被拼进 URL 发出去）----
+// 契约：<path> 必须是**单个** "/" 开头的绝对路径——sendRequest 以 `/` + prefix + argPath 拼 URL，
+// 少一个前导 "/" 会静默拼成 "/open-api-publicv1/..."（必然 404 且无任何提示），
+// 多一个 "/" 会拼成 "//v1/..."（Gateway 是否归一化未验证）。
+// 最常见的违规来源是 Git Bash：MSYS 运行时在 Node 启动前就把 `/v1/...` 转成
+// `C:/Program Files/Git/v1/...`（转换发生在 argv 阶段，脚本拿不到原始值，无法自愈），
+// 只能 fail-fast 提示调用方先 source setup-env.sh（= 置 MSYS_NO_PATHCONV=1）。
+function checkArgPath(argPath) {
+  if (argPath.startsWith("/") && !argPath.startsWith("//")) return;
+  const msys = (process.env.MSYSTEM || process.env.MSYS) && process.env.MSYS_NO_PATHCONV !== "1";
+  let hint = "";
+  if (msys && /^[A-Za-z]:[\\/]/.test(argPath)) {
+    const setupEnv = path
+      .join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "scripts", "setup-env.sh")
+      .replace(/\\/g, "/");
+    hint =
+      `\n   原因：Git Bash 下未设置 MSYS_NO_PATHCONV=1，开头的 "/" 被 MSYS 转成了 Windows 绝对路径。\n` +
+      `   修复：先执行 source "${setupEnv}" 后重跑本命令。\n` +
+      `   注意：禁用转换后所有本地路径（--file、脚本自身路径等）须写 Windows 形式（C:/...），POSIX 形式（/c/...）会解析失败。`;
+  } else if (argPath.startsWith("//")) {
+    hint = `\n   提示："//v1/..." 不会被 MSYS 还原成 "/v1/..."，请直接去掉一个 "/"。`;
+  }
+  console.error(
+    `❌ API 路径必须是单个 "/" 开头的绝对路径，收到 "${argPath}"。${hint}\n` +
+    `   正确示例：node api.mjs GET /v1/gallery/camps`
+  );
+  process.exit(2);
 }
 
 // ---- STS 凭证解析（规避超长 security_token 经命令行传递被截断）----
@@ -427,6 +457,7 @@ async function main() {
     console.error('❌ 用法: node api.mjs <GET|POST> <path> [--query ".."] [--header "N: v"] [--form "f=v"] [--file "n=@/path"] [--idempotency-key "k"] [--creds-file <json>] [--auto-refresh]\n  运行 node api.mjs --help 查看完整用法。');
     process.exit(2);
   }
+  checkArgPath(o.argPath);
 
   resolveCreds(o);
 

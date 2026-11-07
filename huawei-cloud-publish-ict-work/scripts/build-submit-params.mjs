@@ -19,7 +19,7 @@
 //     --out <params.json> --problem-id <id> --training-camp <id> --problem-name <name> \
 //     --work-name <name> --git-url <url> --git-branch <branch> \
 //     --creds sts-creds.json [--api <api.mjs>] [--lock-file <f>] \
-//     [--domain-id <id>] [--idempotency-key <key>] [--no-refresh]
+//     [--idempotency-key <key>] [--no-refresh]
 //
 // stdout:
 //   #params=<absPath>
@@ -38,13 +38,13 @@ if (process.platform === "win32") {
 
 const thisDir = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
-const cli = { out: null, problemId: null, trainingCamp: null, problemName: null, workName: null, gitUrl: null, gitBranch: null, creds: null, domainId: null, idem: null, noRefresh: false, api: path.join(thisDir, "api.mjs"), lockFile: null };
+const cli = { out: null, problemId: null, trainingCamp: null, problemName: null, workName: null, gitUrl: null, gitBranch: null, creds: null, idem: null, noRefresh: false, api: path.join(thisDir, "api.mjs"), lockFile: null };
 const help = `build-submit-params.mjs — 装配 submit 参数 JSON
 
 用法:
   node build-submit-params.mjs --out <json> --problem-id <id> --training-camp <id> --problem-name <name> \\
     --work-name <name> --git-url <url> --git-branch <branch> --creds <sts-creds.json> \\
-    [--api <api.mjs>] [--lock-file <f>] [--domain-id <id>] [--idempotency-key <key>] [--no-refresh]
+    [--api <api.mjs>] [--lock-file <f>] [--idempotency-key <key>] [--no-refresh]
 
 选项:
   --out <json>            输出参数文件（必填）
@@ -57,7 +57,6 @@ const help = `build-submit-params.mjs — 装配 submit 参数 JSON
   --creds <file>          Step 0 的 sts-creds.json（必填）
   --api <f>               api.mjs 路径（默认同目录副本，A0 校验用）
   --lock-file <f>         目标锁路径（默认同 --creds 目录 .ict-target.json；缺失则跳过锁校验）
-  --domain-id <id>        透传 X-Domain-Id（仅本地/联调）
   --idempotency-key <key> 默认 ict-submit-<problemId>-<Date.now()>；重提务必传新键
   --no-refresh            不带 _refresh（跳过 401 自动刷新元数据）
 
@@ -77,7 +76,6 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === "--creds") cli.creds = argv[++i];
   else if (a === "--api") cli.api = argv[++i];
   else if (a === "--lock-file") cli.lockFile = argv[++i];
-  else if (a === "--domain-id") cli.domainId = argv[++i];
   else if (a === "--idempotency-key") cli.idem = argv[++i];
   else if (a === "--no-refresh") cli.noRefresh = true;
   else { console.error(`❌ 未知参数: ${a}`); process.exit(2); }
@@ -181,7 +179,6 @@ const params = {
   gitUrl: cli.gitUrl,
   gitBranch: cli.gitBranch,
 };
-if (cli.domainId) params.domainId = cli.domainId;
 params.accessKeyId = accessKeyId;
 params.secretAccessKey = secretAccessKey;
 params.securityToken = securityToken;

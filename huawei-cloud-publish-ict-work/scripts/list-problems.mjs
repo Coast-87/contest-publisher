@@ -23,6 +23,8 @@
 //   #selected number=<n> problemId=<pid> trainingCampId=<camp> name=<name>   （选择模式，name 为末字段；ID 仅此出）
 //   空列表/全部不可提交 exit 1: `#none`（stderr 含明确原因）
 //   请求失败 exit 1: 原样输出 api.mjs 响应（首行 #status）
+//   mySubmissionState（2026-11-01，A0 有调用方身份时下发）：列表行在行尾追加
+//     `[不可提交：判题中|已判题通过|已达 3 次提交上限]`；select 命中则 exit 2 #selected-blocked reason=…
 // 选择模式失败 exit 2:
 //   #selected-none reason=outofrange|nomatch
 //   #selected-ambiguous matches=<m>   随后 1) number=… name=…
@@ -52,7 +54,7 @@ function printHelp() {
 选项:
   --api <f>            api.mjs 路径（默认同目录副本）
   --creds-file <json>  STS 凭证文件，透传 api.mjs（open-api-public 前缀需要）
-  --header "N: v"      额外请求头（如 X-Domain-Id），可叠加
+  --header "N: v"      额外请求头，可叠加
   --brief              列表模式压缩：多数赛题窗口/状态相同时折成一行 #window(default)=…，
                        逐行只在偏离默认时补后缀（省 token；默认关闭，输出与历史逐字一致）
   --select <n>         按列表序号选择目标赛题，输出 #selected 并写目标锁（>=1）
@@ -169,12 +171,27 @@ for (const it of items) {
   const pid = it.problemId ?? "";
   if (seen.has(pid)) continue;
   seen.add(pid);
-  // can_publish=false（赛题1 作品发布任务题）：列表仍展示（供识别），但选择/提交均禁止
-  problems.push({ number: problems.length + 1, pid, trainingCampId: it.trainingCampId ?? "", name: it.name ?? "", start: it.startsAt ?? "", end: it.endsAt ?? "", status: it.status ?? "", canPublish: it.can_publish !== false });
+  // can_publish=false（赛题1 作品发布任务题）：列表仍展示（供识别），但选择/提交均禁止；
+  // mySubmissionState（2026-11-01 A0 附带，仅调用方有身份时下发）：judging=判题中 / passed=已通过 / attempts_exhausted=3 次用尽，
+  // 这三态同样禁止选择/提交（提交端点 409 兜底，这里提前告知用户）。
+  problems.push({ number: problems.length + 1, pid, trainingCampId: it.trainingCampId ?? "", name: it.name ?? "", start: it.startsAt ?? "", end: it.endsAt ?? "", status: it.status ?? "", canPublish: it.can_publish !== false, myState: it.mySubmissionState ?? "" });
 }
 
 function winSuffix(p) {
   return p.start || p.end ? ` window=${p.start || "?"}~${p.end || "?"} status=${p.status || "?"}` : "";
+}
+// 个人不可提交状态标注（2026-11-01）：A0 仅在调用方有身份时下发 mySubmissionState；
+// 此处把 3 种终态/进行态映射为面向用户的中文提示（列表展示与 select 拦截共用同一口径）
+const MY_STATE_LABEL = {
+  judging: "不可提交：判题中",
+  passed: "不可提交：已判题通过",
+  attempts_exhausted: "不可提交：已达 3 次提交上限",
+};
+function myStateSuffix(p) {
+  return p.myState && MY_STATE_LABEL[p.myState] ? ` [${MY_STATE_LABEL[p.myState]}]` : "";
+}
+function myStateBlocked(p) {
+  return p.myState === "judging" || p.myState === "passed" || p.myState === "attempts_exhausted";
 }
 function selectedLine(p) {
   return `#selected number=${p.number} problemId=${p.pid} trainingCampId=${p.trainingCampId} name=${p.name}`;
@@ -213,6 +230,12 @@ if (cli.select != null) {
     console.error(`   赛题1 需在做题面板领取任务后按要求完成（发布普通作品即完成）；请选择其他 AI 赛题。`);
     process.exit(2);
   }
+  if (myStateBlocked(target)) {
+    console.log(`#selected-blocked reason=${target.myState} number=${target.number} problemId=${target.pid} name=${target.name}`);
+    console.error(`❌ 赛题 ${target.number}「${target.name}」${MY_STATE_LABEL[target.myState]}，禁止选择。`);
+    console.error(`   判题中请等待判题结果；已通过/已达上限请在做题面板查看，不要再重复提交。`);
+    process.exit(2);
+  }
   selectTarget(target);
 }
 if (cli.selectName != null) {
@@ -233,6 +256,12 @@ if (cli.selectName != null) {
     console.log(`#selected-forbidden number=${matches[0].number} problemId=${matches[0].pid} name=${matches[0].name}`);
     console.error(`❌ 赛题「${matches[0].name}」为作品发布任务题（赛题1），不可提交，禁止选择。`);
     console.error(`   赛题1 需在做题面板领取任务后按要求完成（发布普通作品即完成）；请选择其他 AI 赛题。`);
+    process.exit(2);
+  }
+  if (myStateBlocked(matches[0])) {
+    console.log(`#selected-blocked reason=${matches[0].myState} number=${matches[0].number} problemId=${matches[0].pid} name=${matches[0].name}`);
+    console.error(`❌ 赛题「${matches[0].name}」${MY_STATE_LABEL[matches[0].myState]}，禁止选择。`);
+    console.error(`   判题中请等待判题结果；已通过/已达上限请在做题面板查看，不要再重复提交。`);
     process.exit(2);
   }
   selectTarget(matches[0]);
@@ -256,7 +285,7 @@ const winDefault = cli.brief ? briefDefault(problems) : "";
 if (winDefault) console.log(`#window(default)=${winDefault.replace(/^window=/, "")}`);
 for (const p of problems) {
   const suffix = cli.brief && winSuffix(p).trim() === winDefault ? "" : winSuffix(p);
-  console.log(`#problem ${p.number} ${p.name}${suffix}${p.canPublish ? "" : " [不可提交：作品发布任务题，禁止选择]"}`);
+  console.log(`#problem ${p.number} ${p.name}${suffix}${p.canPublish ? "" : " [不可提交：作品发布任务题，禁止选择]"}${myStateSuffix(p)}`);
 }
 const selectable = problems.filter((p) => p.canPublish);
 if (selectable.length === 0) {

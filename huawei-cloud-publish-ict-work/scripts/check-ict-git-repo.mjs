@@ -14,7 +14,7 @@
 //   exit 0:
 //     #gitUrl=<https://… .git>   #allowed=1   （可提交；gitUrl 为剥离凭证后的安全 URL）
 //   exit 1:
-//     #gitAbsent=1               该目录无 .git / 非 git 仓库（提示改选已建远程仓库的目录）
+//     #gitAbsent=1               该目录无 .git / 非 git 仓库（按 stderr 闭环自助：OAuth → git init+commit → gitcode-repos --list 选已有 / --create 新建 → push → 重跑本脚本）
 //     #exampleRepo=1 frag=<host/path> gitUrl=<url>  （命中示例仓库红线，提示重选目录）
 //     #error=1 …                 其他失败（git 读取失败 / A3 请求失败等）
 //   exit 2: 参数错误
@@ -57,7 +57,11 @@ stdout（exit 0=放行 / 1=不放行或失败 / 2=参数错误）:
 if (!workDir) { console.error("❌ 用法: node check-ict-git-repo.mjs <workDir>"); process.exit(2); }
 if (!existsSync(workDir) || !existsSync(path.join(workDir, ".git"))) {
   console.log("#gitAbsent=1");
-  console.error(`ℹ️ ${workDir} 无 .git 目录（非 git 仓库）。赛题作品需提交到您自己的 git 远程仓库后提交；请改选已建仓目录。`);
+  console.error(`ℹ️ ${workDir} 无 .git 目录（非 git 仓库）。赛题作品需提交到您自己的 git 远程仓库，按 SKILL.md Step 2.4 闭环自助：`);
+  console.error("   ① ensure-gitcode-credential.mjs（无凭证则 gitcode-oauth.ensure.mjs --start / --wait 授权）");
+  console.error("   ② 在本目录 git init + git add -A + git commit");
+  console.error("   ③ gitcode-repos.mjs --list 让用户选「推已有仓库」或 --create 新建仓库");
+  console.error("   ④ git remote add origin <cloneUrl> + git push -u origin <branch>，再重跑本脚本（A3 红线按新 gitUrl 复核）。");
   process.exit(1);
 }
 

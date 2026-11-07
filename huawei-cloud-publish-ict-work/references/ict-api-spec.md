@@ -12,7 +12,6 @@
 | A3 检查 git 可提交性（预检） | `POST /open-api-guest/v1/gallery/competition/git-check` | 免鉴权（open-api-guest Agent 前缀，无 STS） |
 
 - **身份链路（R16/R10）**：skill 先本地生成**最小权限 STS 临时凭证**（`gen_sts.py` → `sts-creds.json`），经 `X-Tmp-Ak`/`X-Tmp-Sk`/`X-Security-Token` 头发给网关；网关解析出 domainId 并注入 `X-Domain-Id`；gallery 用 `X-Domain-Id` 反查 `normal_users.id`（accountId）定位参赛人，**不经请求 body 传身份**。
-- **本地/网关后联调**：可用 `--header "X-Domain-Id: <domainId>"` 透传测试身份（`submit-ict-work.mjs` 的 `domainId` 参数）。生产环境由网关注入，勿在 body 手传。
 - 所有接口经本 skill 副本 `scripts/api.mjs` 调用（连接超时 3s，stdout 首行 `#status=<code>`；`--creds-file` 注入 STS 头，401 自动刷新）。
 
 ## A0 查询 ICT 专属活动（提交前调用）
@@ -84,7 +83,7 @@
 } }
 ```
 
-> **无积分字段（2026-09-17 移除白名单机制）**：A1 不再即时领取成长积分，201 响应 **无 `reward`**——积分领取仅普通作品发布通道（`claimPublishRewardAfterPublish`，每日限一次）。skill 侧不提示积分。
+> **无积分字段（2026-09-17 移除白名单机制）**：A1 不再即时领取成长积分，201 响应 **无 `reward`**——积分领取仅普通作品发布通道（`claimPublishRewardAfterPublish`，每月限一次）。skill 侧不提示积分。
 
 > **异步语义**：`judgeStatus=pending`，判题程序异步判题（2026-09-15 起拉取模式：gallery 不推送，判题方主动拉取 `/inner/v1/gallery/competition/judge/pending` 待判列表，判完经内部 `/inner/.../judge-callback` 回传后更新为 `passed`/`failed`）。**提交成功 ≠ 判题通过**，skill 提示"已提交，判题异步进行，结果在做题面板更新"，**不再轮询 A2**。
 

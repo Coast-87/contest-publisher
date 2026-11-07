@@ -11,7 +11,7 @@ description: |
   Do NOT use for judging itself, viewing scores/ranking, or platform browsing without submit intent.
 metadata:
   tags: huawei-cloud,ict-competition,ai-problem,submit,gallery,university operations platform
-  version: 2026.10.15.003
+  version: 2026.11.04.003
 ---
 
 # Publish ICT Competition Work
@@ -20,19 +20,19 @@ metadata:
 
 > **提交形态**：只需 `workName`/`gitUrl`/`gitBranch`（无封面/详情），提交后**不轮询判题**——结果由平台异步回传，在做题面板更新。
 >
-> **防错投铁律**：`--select` 选定后即本次唯一目标，**任何失败只转述并停止，绝不自动改投**（锁语义与校验机制见 Step 1.3、Step 4.2/4.4）。
+> **防错投铁律**：`--select` 选定后即本次唯一目标，**任何失败只转述并停止，绝不自动改投**（锁语义与校验机制见 Step 1.5、Step 4.2/4.4）。
 >
 > 辅助脚本（`read-git-info.mjs`、`ensure-user-tool.mjs` 等）为 **vendored 副本**（头部 `sync-src:` 指源），改动须同步两端。
 
 ## Pipeline
 
 ```
-Step 0 (domainID, STS creds) → Step 1 (problemId, trainingCampId, window) → Step 2 (workDir + A3 git 红线检查) → Step 3 (gitUrl, gitBranch, workName) → Step 4 (submit)
+Step 0 (domainID, STS creds) → Step 1 (公告+版本检查, problemId, trainingCampId, window) → Step 2 (workDir + A3 git 红线检查) → Step 3 (gitUrl, gitBranch, workName) → Step 4 (submit)
 ```
 
 **变量贯穿**：`workName`/`problemId`/`trainingCampId`/`name`/`domainID` 一旦确定即传参，禁止硬编码。
 
-**执行模型**：① **契约优先**——按 stdout 成功信号判定，**成功路径零源码读取**；仅失败时按 `脚本提示 → ict-error-codes → 定向 grep` 逐级查，**禁止整文件读脚本**（脚本合计 ~168KB，整读即数十倍 token 开销） ② 网络超时 3s ③ `detect-env.mjs` 定平台后按平台差异执行 ④ 无依赖命令用 `;` 串成一条 ⑤ **需用户交互的授权（如 GitCode OAuth）一律原样展示链接/二维码，禁用 agent 内置浏览器代开**——脚本已起本地回调，用户授权后自动拿到 token。
+**执行模型**：① **契约优先**——按 stdout 成功信号判定，**成功路径零源码读取**；仅失败时按 `脚本提示 → ict-error-codes → 定向 grep` 逐级查，**禁止整文件读脚本**（脚本合计 ~168KB，整读即数十倍 token 开销） ② 网络超时 3s ③ `detect-env.mjs` 定平台后按平台差异执行 ④ 无依赖命令用 `;` 串成一条 ⑤ **需用户交互的授权（如 GitCode OAuth）禁用 agent 内置浏览器代开**——脚本已起本地回调，二维码为 **best-effort**（净化后文本），放进**等宽代码块**展示，渲染异常（乱码/断行）**直接给链接**即可。
 
 ## 脚本契约速查
 
@@ -40,18 +40,22 @@ Step 0 (domainID, STS creds) → Step 1 (problemId, trainingCampId, window) → 
 |------|-----------|----------------------|--------------------------|
 | 0 | `resolve-domain.mjs [--hcloud <exe>]` | stdout `#domain=<id> name=<name>` | exit 1=hcloud 失败（stderr 含排查指引） |
 | 0 | `gen_sts.py --account <domainID>` | 写 `sts-creds.json`（含 `_refresh`） | 见 troubleshooting 同源指引 |
-| 前置 | `check-version.mjs`（自读 name/version 调 `open-api-guest /v1/gallery/skills/status`） | exit 0 且首行 `status=ok`/`status=skip`（平台不可达亦 skip，不拦截） | exit 1（`status=outdated` + 平台升级文案）→ 原样提示升级并停止；版本比对 /「缺失即过时」判定均在平台侧 |
-| 前置 | `api.mjs GET /v1/gallery/announcements/current --prefix open-api-guest`（全站）+ 同命令 `--query "scope=competition"`（竞赛页） | 两条均 `#status=200`；`data.announcement` 非 null 则展示（并存都展示） | 非 200 / 公告 null → 静默跳过，不阻塞 |
-| 1 | `list-problems.mjs [--brief] [--creds-file <json>]` | `#problem <n> <name>`（**不含 ID**，ID 仅经 `#selected` 取得）；`--brief` 把重复的 window/status 折成一行 `#window(default)=…`（逐行只在偏离默认时补），赛题1 带 `[不可提交…]` 标注仍展示 | exit 1（`#none`=空列表/全部不可提交，或非 200）→ 提示无可用 AI 赛题 |
-| 1 | `list-problems.mjs --select <n> \| --select-name <kw> [--force] [--creds-file <json>]` | `#selected number=<n> problemId=<pid> trainingCampId=<camp> name=<name>`（name 末字段）+ 写目标锁 `.ict-target.json`（超 900s 作废） | exit 2= `#selected-none`（越界/无匹配）/ `#selected-ambiguous`（名称多值）/ `#selected-locked`（锁指他题，改投须用户确认 + `--force`）/ `#selected-forbidden`（赛题1，can_publish=false） |
+| 1 | `check-version.mjs`（自读 name/version 调 `open-api-guest /v1/gallery/skills/status`） | exit 0 且首行 `status=ok`/`status=skip`（平台不可达亦 skip，不拦截） | exit 1（`status=outdated` + 平台升级文案）→ 原样提示升级并停止；版本比对 /「缺失即过时」判定均在平台侧 |
+| 1 | `api.mjs GET /v1/gallery/announcements/current --prefix open-api-guest --query "scope=site&scope=competition"`（2026-10-30 起单次查询 scope 数组，列表返回） | `#status=200`；`data.announcements` 非空则逐条展示（多条并存都展示） | 非 200 / 列表为空 → 静默跳过，不阻塞 |
+| 1 | `list-problems.mjs [--brief] [--creds-file <json>]` | `#problem <n> <name>`（**不含 ID**，ID 仅经 `#selected` 取得）；`--brief` 把重复的 window/status 折成一行 `#window(default)=…`（逐行只在偏离默认时补），赛题1 带 `[不可提交…]` 标注仍展示；调用方有身份时，判题中/已通过/达 3 次上限的赛题行尾追加 `[不可提交：判题中|已判题通过|已达 3 次提交上限]` | exit 1（`#none`=空列表/全部不可提交，或非 200）→ 提示无可用 AI 赛题 |
+| 1 | `list-problems.mjs --select <n> \| --select-name <kw> [--force] [--creds-file <json>]` | `#selected number=<n> problemId=<pid> trainingCampId=<camp> name=<name>`（name 末字段）+ 写目标锁 `.ict-target.json`（超 900s 作废） | exit 2= `#selected-none`（越界/无匹配）/ `#selected-ambiguous`（名称多值）/ `#selected-locked`（锁指他题，改投须用户确认 + `--force`）/ `#selected-forbidden`（赛题1，can_publish=false）/ `#selected-blocked`（判题中/已通过/次数用尽，reason=judging\|passed\|attempts_exhausted） |
 | 1 | `check-competition-window.mjs --start <所选赛题 startsAt> --end <endsAt>` | `#window=open remainingDays=<n>` | exit 1（`#window=closed reason=before/after`）→ 停止，告知窗口起止 |
 | 2 | `scan-workdirs.mjs --dir <workRoot>` | `#candidate <n> <abs>`（workspace=一级子目录 + 项目递归命中并集；direct=根本身）或 `#none`（exit 0，转手动输入） | exit 2=参数错误 |
 | 2 | `check-ict-git-repo.mjs <workDir>` | `#gitUrl=<https://… .git>` `#allowed=1` | exit 1= `#exampleRepo=1`（示例仓库，重选目录）/ `#gitAbsent=1`（非 git 仓库）/ `#error=1`（读取或 A3 失败） |
 | 3 | `strip-git-credential.mjs "<rawUrl>"` | stdout=安全 URL（https:// 开头、.git 结尾、无 `@`） | 非 https/非 .git/含 `@` → 停止 |
 | 3 | `read-git-info.mjs <workDir>` | `#gitUrl=<https://… .git>` `#gitBranch=<分支>`（已核对远端存在） | exit 1=非 git / 无 origin / detached HEAD / URL 不合规 / `#branchAbsent=1`（转述 stderr：`git push -u origin <branch>` 或改用远端已有分支；网络/凭证问题只 stderr 警告不拦截） |
 | 3 | `ensure-gitcode-credential.mjs` | `#credential=found`（有凭证）或 `#credential=missing`（无凭证，走 OAuth） | exit 0；无手动备选 |
-| 3 | `gitcode-oauth.ensure.mjs --start` | `#oauth=ready`（有 token）/ `#oauth=started session_id=<id> login_url=<url>`（stdout 立即返回，二维码走 stderr） | 缺失 `#oauth=absent` exit 1；失败 `#oauth=failed reason=…` exit 1 |
-| 3 | `gitcode-oauth.ensure.mjs --wait <session_id> [--timeout <秒>]` | `#oauth=done`（token 已写 `~/.gitcode/auth.toml`） | `#oauth=failed reason=timeout\|finish\|…` exit 1 |
+| 3 | `gitcode-oauth.ensure.mjs --login [--timeout <秒>]` | `#oauth=ready`（已有 token）/ `#oauth=started session_id=<id> login_url=<url>` → `#oauth=done`（一条命令跑完；**必须后台运行**，超时/中断不杀 serve） | `reason=timeout`（serve 保留 → 重跑 `--wait <session_id>` 续上）/ `reason=serve-dead`（serve 被中断带走 → 重新 `--login`）/ `reason=server` |
+| 3 | `gitcode-oauth.ensure.mjs --stop` | `#oauth=stopped killed=<pid\|none>`（结束并清理后台 serve，幂等） | — |
+| 3 | `gitcode-oauth.ensure.mjs --start` | `#oauth=ready`（有 token）/ `#oauth=started session_id=<id> login_url=<url>`（stdout 立即返回；净化后文本二维码走 stderr，best-effort） | 缺失 `#oauth=absent` exit 1；失败 `#oauth=failed reason=…` exit 1 |
+| 3 | `gitcode-oauth.ensure.mjs --wait <session_id> [--timeout <秒>]` | `#oauth=done`（token 已写 `~/.gitcode/auth.toml`）；超时/中断不杀 serve（可续跑本命令） | `reason=timeout`（serve 保留 → 重跑本命令）/ `reason=serve-dead`（重新 `--login`）/ `reason=finish\|token\|…` exit 1 |
+| 2/3 | `gitcode-repos.mjs --list [--query <关键字>] [--limit 30]` | 每行 `#repo <n> <owner/name> <cloneUrl> private=<0\|1>` + `#count=<n>`（`#count=0` → 只能新建）。**脚本直连 OpenAPI** `GET /user/repos`（`Authorization: Bearer`；token 取 `$GITCODE_TOKEN` 或 `~/.gitcode/auth.toml`；**不依赖 gitcode-oauth CLI 的 get 子命令**） | 未登录 → exit 1 指引先 OAuth；401/403 → 重跑 OAuth（或用 `GITCODE_TOKEN` 传 PAT）；404 → 查 `GITCODE_API_URL`；响应非 JSON → 接口变更 |
+| 2/3 | `gitcode-repos.mjs --create <仓库名> [--description <d>] [--private]` | `#created full_name=<owner/name> cloneUrl=<https://… .git> webUrl=<https://…> private=<0\|1>`（直连 `POST /user/repos` 建**空**仓，首次 push 即默认分支） | 409=名字/路径已占用（→ `--list --query` 让用户选已有或换名）；422=名字不合法；401/403=重跑 OAuth |
 | 3 | `extract-workname.mjs <workDir>` | `#name=<name> source=<来源>` | exit 1=workDir 不存在 |
 | 4 | `build-submit-params.mjs --out … --problem-id … --training-camp … --problem-name <name> --work-name … --git-url … --git-branch … --creds <sts-creds.json>` | `#params=<absPath>`（注入凭证 + 自动 Idempotency-Key；已过「锁一致性 + A0」校验） | exit 1=creds 缺失/A0 失败；exit 2=参数错/锁不一致/名称或活动不匹配 |
 | 4 | `submit-ict-work.mjs <utf8-params.json>` | `#status=201`（输出 submissionId/attemptNo/judgeStatus/workId/workUrl） | 409/403 等失败 → 原样输出完整响应 |
@@ -60,7 +64,7 @@ Step 0 (domainID, STS creds) → Step 1 (problemId, trainingCampId, window) → 
 >
 > **Git Bash 前置**：Windows Git Bash 下先 `source <skill>/scripts/setup-env.sh`（防 MSYS 把 `/v1/…` 转成 `C:/.../v1/…`）。PowerShell/CMD 无需。
 
-> **平台公告（展示性，不设门禁）**：前置两条查询中 `data.announcement` 非 null 时，按 `data.announcement.content` 原样展示（附 `startsAt ~ endsAt` 时间窗，按公告 `timezone` 标注）；两条并存都展示、仅一条展示一条，null/失败静默跳过，**不阻塞提交**。
+> **平台公告（展示性，不设门禁）**：执行见 Step 1 第 2 步。
 
 ---
 
@@ -76,12 +80,17 @@ Step 0 (domainID, STS creds) → Step 1 (problemId, trainingCampId, window) → 
 
 ### Step 1: 赛题发现（A0）
 
-1. `list-problems.mjs --brief` 拉全量赛题 → `#problem <n>` 候选（见表）。
-2. **列出所有赛题供用户选择**：**展示全部** AI 赛题 `1) <赛题名>`（对应 `#problem <n>`，含 `window=… status=…` 标注；`--brief` 下该标注折叠为一行 `#window(default)=…`，**展示时须把该默认行一并列出**），**不省略、不按窗口过滤**；用户回序号（或名称关键词）选择。**赛题1（作品发布任务题）带 `[不可提交]` 标注——禁止选择**：它不是可提交赛题，领取后发布普通作品即完成，选择会被脚本直接拒绝（`#selected-forbidden`）。
-3. **目标锁定（禁止手抄 ID）**：`list-problems.mjs --select <序号>`（或 `--select-name <关键词>`）→ `problemId`/`trainingCampId`/`name` **只取自 `#selected` 行，禁止从 `#problem` 文本行手抄/目测**；脚本同时写**目标锁**（本次唯一目标，超 900s 作废）。`#selected-locked` → 已有锁指向他题，**仅用户明确同意改投**才可加 `--force`；`#selected-forbidden` → 赛题1 不可提交，**转述并停止**，请用户改选。
-4. **目标声明（校验）**：向用户展示并请其确认 — `本次目标：序号 <n>／赛题「<name>」／problemId=<pid>`；确认后才继续。**本步骤起目标即锁定，后续任何失败不得擅自变更。**
-5. **窗口预检（对所选赛题）**：选定后用 `check-competition-window.mjs` 按其 `startsAt/endsAt` 判定；窗口外停止并告知（不影响第 2 步展示全部）。
-6. **身份说明**：告知提交将以网关注入的账号身份进行。
+**先跑两项前置检查（Step 1 子步骤 1/2）**：
+1. **版本检查**：`check-version.mjs`。`status=ok`/`skip` 继续；`outdated` 原样提示升级并停止。
+2. **公告检查**：`api.mjs GET /v1/gallery/announcements/current --prefix open-api-guest --query "scope=site&scope=competition"`。`data.announcements` 非空则**逐条**按 `content` 原样展示（附 `startsAt ~ endsAt` 时间窗，按公告 `timezone` 标注）；多条都展示、空/失败静默跳过，**不阻塞提交**。
+
+然后正式进入赛题发现与目标锁定：
+3. `list-problems.mjs --brief` 拉全量赛题 → `#problem <n>` 候选（见表）。
+4. **列出所有赛题供用户选择**：**展示全部** AI 赛题 `1) <赛题名>`（对应 `#problem <n>`，含 `window=… status=…` 标注；`--brief` 下该标注折叠为一行 `#window(default)=…`，**展示时须把该默认行一并列出**），**不省略、不按窗口过滤**；用户回序号（或名称关键词）选择。**赛题1（作品发布任务题）带 `[不可提交]` 标注——禁止选择**：它不是可提交赛题，领取后发布普通作品即完成，选择会被脚本直接拒绝（`#selected-forbidden`）。**个人不可提交状态（2026-11-01）**：若某赛题行尾带 `[不可提交：判题中|已判题通过|已达 3 次提交上限]`，须把该原因一并展示给用户并说明"该题当前不可提交"，提示其改选其他赛题。
+5. **目标锁定（禁止手抄 ID）**：`list-problems.mjs --select <序号>`（或 `--select-name <关键词>`）→ `problemId`/`trainingCampId`/`name` **只取自 `#selected` 行，禁止从 `#problem` 文本行手抄/目测**；脚本同时写**目标锁**（本次唯一目标，超 900s 作废）。`#selected-locked` → 已有锁指向他题，**仅用户明确同意改投**才可加 `--force`；`#selected-forbidden` → 赛题1 不可提交，**转述并停止**，请用户改选；`#selected-blocked reason=…` → 该题个人判题中/已通过/次数用尽，**转述并停止**，请用户改选其他赛题。
+6. **目标声明（校验）**：向用户展示并请其确认 — `本次目标：序号 <n>／赛题「<name>」／problemId=<pid>`；确认后才继续。**本步骤起目标即锁定，后续任何失败不得擅自变更。**
+7. **窗口预检（对所选赛题）**：选定后用 `check-competition-window.mjs` 按其 `startsAt/endsAt` 判定；窗口外停止并告知（不影响第 4 步展示全部）。
+8. **身份说明**：告知提交将以网关注入的账号身份进行。
 
 **Output:** `number`、`problemId`、`trainingCampId`、`name`、`windowStart`、`windowEnd`。
 
@@ -94,7 +103,15 @@ Step 0 (domainID, STS creds) → Step 1 (problemId, trainingCampId, window) → 
 3. 手动输入兜底：候选不符 / `#none` / 指定任意目录，均请用户输入（`#none` 不拦截、不擅自指定）。
 4. **git 红线检查（提交之初即查，接口判定）**：对用户确认的 `workDir` 跑 `check-ict-git-repo.mjs <workDir>`（内部读 `.git` origin → 调 A3 git-check，判定规则以**后端配置**为准）：
    - `#exampleRepo=1` → 脚本 stderr 已给出完整红线提示，**转述并且唯一处置是回到本步骤请用户重新选择「赛题作品目录」**；禁止继续后续步骤，禁止 fork、禁止拆分/另推示例仓库内容为个人仓库提交（红线规则见 [ict-error-codes.md](references/ict-error-codes.md) `GIT_URL_EXAMPLE_REPO`）。
-   - `#gitAbsent=1` → 提示该目录非 git 仓库（无 `.git`）：赛题作品须提交到自己的 git 远程仓库；请用户改选已建仓目录。
+   - `#gitAbsent=1` → 该目录不是 git 仓库（无 `.git`）。赛题作品须提交到**你自己的 git 远程仓库**，此时**不要**只让用户"改选已建仓目录"或"自己去建仓推送"，按下面闭环自助（与母技能 Step 3 同款）：
+     1. **凭证**：`ensure-gitcode-credential.mjs`——`#credential=found` 即已登录，跳过。`#credential=missing` → 把 `gitcode-oauth.ensure.mjs --login` **以后台任务方式运行**（前台阻塞会被工具超时按进程树连坐杀掉回调 serve）：从输出读 `#oauth=started session_id=<id> login_url=<url>`（二维码在 stderr，best-effort：等宽代码块展示，异常就直接给链接；**禁止**用 agent 内置浏览器代开），交给用户后继续读同一任务直到 `#oauth=done`。中断/超时**不杀 serve**：**先查 token 是否已落盘**（`#credential=found`/`#oauth=ready` 即成功，不要重复登录）→ 未落盘则重跑 `--wait <session_id>` 续上（**不要**重新 `--login`/`--start`，会换 session）；`reason=serve-dead` 才重新 `--login`；放弃时 `--stop` 清理。
+     2. **本地建仓**：在 workDir `git init` + `git add -A` + `git commit`（无提交时）。
+     3. **远端仓库二选一（必须问用户，禁止替其决定）**：`gitcode-repos.mjs --list` 展示已有仓库编号（`#repo <n> <owner/name> <cloneUrl>`，`#count=0` 说明只能新建）→ **明确问：推送到已有仓库（回序号）还是新建仓库（回仓库名；默认公开——判题侧需能拉取，私有仅在用户明确要求时用 `--private` 并告知风险）**。
+        - 已有 → `git remote add origin <cloneUrl>`（已有 origin 用 `git remote set-url origin <cloneUrl>`）；
+        - 新建 → `gitcode-repos.mjs --create <仓库名> [--description <目录名>]` → 取 `#created cloneUrl=` 后 `git remote add origin <cloneUrl>`。
+        - **禁止**把「用户自己去建仓 / 自己手动 push」当首选方案；仅当用户明确要求或 OAuth/建仓接口不可用时才降级（失败处置见 [troubleshooting#gitcode-repository-setup-failures](../huawei-cloud-publish-work-to-gallery/references/troubleshooting.md#gitcode-repository-setup-failures)）。
+     4. **推送**：`git push -u origin <branch>`（`branch` = `git rev-parse --abbrev-ref HEAD`）。
+     5. **重跑本步** `check-ict-git-repo.mjs <workDir>`：新建/换仓后 gitUrl 变了，A3 红线必须按新 URL 重新判定（示例仓库红线一条不变：**禁止** fork、**禁止**拆分/另推示例仓库内容为个人作品）。
    - `#error=1` → 提示本地读取/A3 请求失败，按 stderr 排查后重试（不阻塞用户换目录）。
    - `#allowed=1` → 记录 `safeUrl = #gitUrl`，进入 Step 3。
 5. 路径校验：存在且为目录即可作 `workDir`；命名与 git 信息在 Step 3。
@@ -103,9 +120,9 @@ Step 0 (domainID, STS creds) → Step 1 (problemId, trainingCampId, window) → 
 
 ### Step 3: Git Repository Info & Work Name
 
-1. **红线复核（URL 可能变化时）**：若 `#allowed=1` 后 gitUrl 无变化（Step 2 已判定放行）可跳过；若用户手工改过 origin / 输入了自定义 URL，先重跑 `check-ict-git-repo.mjs <workDir>` 复核（同 Step 2.4 判定，命中示例仓库 → 回 Step 2）。
+1. **红线复核（URL 可能变化时）**：若 `#allowed=1` 后 gitUrl 无变化（Step 2 已判定放行）可跳过；若用户手工改过 origin / 输入了自定义 URL / **Step 2.4 新建或改选了仓库**（该处已重跑过一次的除外），先重跑 `check-ict-git-repo.mjs <workDir>` 复核（同 Step 2.4 判定，命中示例仓库 → 回 Step 2）。
 2. `read-git-info.mjs <workDir>` 一步取 gitUrl/gitBranch（含 git 自检 + 凭证剥离 + **远端分支核对**，见表）；其输出的 gitUrl 与 `safeUrl` 比对，不一致以 `read-git-info` 为准并重跑 A3 判定。`#branchAbsent=1` → 转述 stderr 指引（先推送该分支或改用远端已有分支），修复后重跑本步骤。
-3. **凭证排查**：`ensure-gitcode-credential.mjs`；无凭证走 `gitcode-oauth.ensure.mjs` 两阶段授权（`--start`→`--wait`，见表）——**授权链接/二维码原样展示给用户**（禁止 agent 内置浏览器代开）。**若 read-git-info 已能读到 origin**（已有凭证）可跳过 OAuth。
+3. **凭证排查**：`ensure-gitcode-credential.mjs`；无凭证走 `gitcode-oauth.ensure.mjs` 两阶段授权（`--start`→`--wait`，见表）——授权链接 + 净化后文本二维码（**best-effort**），二维码放进**等宽代码块**展示，**渲染异常（乱码/断行）就直接给链接**（链接始终为主路径；禁止 agent 内置浏览器代开）。**若 read-git-info 已能读到 origin**（已有凭证）可跳过 OAuth。
 4. **命名**：`extract-workname.mjs <workDir>`。`source=dirname` 时 agent 可合成/修改（<30 字符）。**换名不只限 `source=dirname`**：Step 4 若被 `409 GALLERY.WORK.DUPLICATE`（该账号在该赛题活动下已占同名）拦下，任何 source 都须换一个 ≤30 字符的新名——**新名先经用户确认**，再回 Step 4 重跑 `build-submit-params.mjs`（见 Step 4.5 ②）。
 
 **Output:** `gitUrl`、`gitBranch`、`workName`。
