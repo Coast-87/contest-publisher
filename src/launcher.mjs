@@ -31,7 +31,8 @@ export function launchWorkbenchWindow(url, { profileDir, platform = PLATFORM, en
   if (!browser) return null;
   const args = appWindowArgs(url, { profileDir });
   try {
-    const child = spawnFn(browser, args, { stdio: 'ignore', windowsHide: true });
+    // 同上：不给 GUI 浏览器传 windowsHide（SW_HIDE 会藏掉 --app 窗口）。
+    const child = spawnFn(browser, args, { stdio: 'ignore' });
     child.on('error', () => {});
     return { child, browser, args };
   } catch { return null; }
@@ -76,7 +77,10 @@ export async function runWorkbenchSession(url, {
     log(`原生窗口（WebView2）已启动：${hostPath}`);
     const nativeStarted = Date.now();
     try {
-      const child = spawnFn(hostPath, [url], { stdio: 'ignore', windowsHide: true });
+      // 禁止 windowsHide：Node 会把它变成 STARTUPINFO wShowWindow=SW_HIDE，宿主的
+      // WinForms 首窗被系统隐藏——进程活着、日志正常、窗口永远看不见（2026-11-07 实测）。
+      // 宿主是 -target:winexe，本就没有控制台可闪，不需要任何隐藏。
+      const child = spawnFn(hostPath, [url], { stdio: 'ignore' });
       child.on('error', () => {});
       const nativeExit = await waitForExit(child);
       const nativeAlive = Date.now() - nativeStarted;

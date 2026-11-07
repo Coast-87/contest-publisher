@@ -21,11 +21,16 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.WinForms;
 
 class WebView2Host : Form
 {
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    private const int SW_SHOW = 5; // 按当前尺寸/状态显示并激活，不覆盖最大化等状态
+
     private readonly string url;
     private readonly System.Windows.Forms.Timer watchdog;
     private int probeFailures = 0;
@@ -89,7 +94,14 @@ class WebView2Host : Form
         watchdog.Start();
         Log("ctor: watchdog started");
 
-        Shown += (s, e) => Log("form shown (visible on screen)");
+        Shown += (s, e) =>
+        {
+            // 父进程若以 SW_HIDE 启动我们（如 Node spawn 的 windowsHide:true），首窗的
+            // ShowWindow(SW_SHOWDEFAULT) 会被 STARTUPINFO 的 wShowWindow 藏掉：进程活着、
+            // Shown 照常触发、一切日志正常，窗口就是看不见。这里显式补一次显示兜底。
+            ShowWindow(Handle, SW_SHOW);
+            Log("form shown (visible on screen)");
+        };
         FormClosed += (s, e) => Log("form closed: reason=" + e.CloseReason);
         FormClosing += (s, e) => TryDeleteDir(userDataDir);
         Load += async (s, e) =>
